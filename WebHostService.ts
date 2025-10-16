@@ -3,7 +3,12 @@ import AgentTeam from "@tokenring-ai/agent/AgentTeam";
 import Fastify, { FastifyInstance } from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
 import KeyedRegistry from "@tokenring-ai/utility/KeyedRegistry";
+import {z} from "zod";
 import type { WebResource } from "./types.js";
+
+export const WebHostConfigSchema = z.object({
+  port: z.number().optional()
+})
 
 export default class WebHostService implements TokenRingService {
   name = "WebHostService";
@@ -13,8 +18,8 @@ export default class WebHostService implements TokenRingService {
   private port: number;
   private resources = new KeyedRegistry<WebResource>();
 
-  constructor(port: number = 3000) {
-    this.port = port;
+  constructor({ port }: z.infer<typeof WebHostConfigSchema>) {
+    this.port = port ?? 0;
     this.server = Fastify({ logger: false });
   }
 
@@ -28,6 +33,13 @@ export default class WebHostService implements TokenRingService {
     }
 
     await this.server.listen({ port: this.port, host: "0.0.0.0" });
+    if (this.port === 0) {
+      if (this.server.addresses().length === 0) {
+        throw new Error("Failed to get port");
+      }
+
+      this.port = this.server.addresses()[0].port;
+    }
     console.log(`WebHost listening on port ${this.port}`);
   }
 

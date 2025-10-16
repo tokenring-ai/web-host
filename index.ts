@@ -1,21 +1,17 @@
 import { AgentTeam, TokenRingPackage } from "@tokenring-ai/agent";
 import { z } from "zod";
 import packageJSON from "./package.json" with { type: "json" };
-import WebHostService from "./WebHostService.js";
+import WebHostService, {WebHostConfigSchema} from "./WebHostService.js";
 
-export const WebHostConfigSchema = z.object({
-  port: z.number().default(3000),
-  enabled: z.boolean().default(true),
-}).optional();
 
 export const packageInfo: TokenRingPackage = {
   name: packageJSON.name,
   version: packageJSON.version,
   description: packageJSON.description,
   install(agentTeam: AgentTeam) {
-    const config = agentTeam.getConfigSlice("webHost", WebHostConfigSchema);
-    if (config?.enabled) {
-      const service = new WebHostService(config.port);
+    const config = agentTeam.getConfigSlice("webHost", WebHostConfigSchema.optional());
+    if (config) {
+      const service = new WebHostService(config);
       agentTeam.addServices(service);
     }
   },
