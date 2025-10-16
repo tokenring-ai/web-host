@@ -1,0 +1,6 @@
+.env
+keys
+node_modules
+.DS_Store
+*.pem
+.turbo
