@@ -1,5 +1,4 @@
 import {AgentTeam, TokenRingPackage} from "@tokenring-ai/agent";
-import {z} from "zod";
 import packageJSON from "./package.json" with {type: "json"};
 import WebHostService, {WebHostConfigSchema} from "./WebHostService.js";
 
@@ -16,7 +15,7 @@ export default {
     }
   },
   async start(agentTeam: AgentTeam) {
-    const service = agentTeam.services.getItemByType(WebHostService);
+    const service = agentTeam.getService(WebHostService);
     if (service) {
       await service.start(agentTeam);
     }
