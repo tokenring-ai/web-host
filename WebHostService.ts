@@ -1,6 +1,7 @@
 import fastifyWebsocket from "@fastify/websocket";
-import AgentTeam from "@tokenring-ai/agent/AgentTeam";
-import {TokenRingService} from "@tokenring-ai/agent/types";
+import TokenRingApp from "@tokenring-ai/app";
+
+import {TokenRingService} from "@tokenring-ai/app/types";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import Fastify, {FastifyInstance} from "fastify";
 import {z} from "zod";
@@ -24,7 +25,7 @@ export default class WebHostService implements TokenRingService {
     this.server = Fastify({logger: false});
   }
 
-  async start(agentTeam: AgentTeam): Promise<void> {
+  async start(): Promise<void> {
     await this.server.register(fastifyWebsocket);
 
     for (const resource of this.resources.getAllItemValues()) {
