@@ -1,7 +1,7 @@
 import fastifyWebsocket from "@fastify/websocket";
 import AgentTeam from "@tokenring-ai/agent/AgentTeam";
 import {TokenRingService} from "@tokenring-ai/agent/types";
-import KeyedRegistry from "@tokenring-ai/utility/KeyedRegistry";
+import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import Fastify, {FastifyInstance} from "fastify";
 import {z} from "zod";
 import type {WebResource} from "./types.js";
