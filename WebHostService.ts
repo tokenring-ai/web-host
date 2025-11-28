@@ -1,5 +1,4 @@
 import fastifyWebsocket from "@fastify/websocket";
-import TokenRingApp from "@tokenring-ai/app";
 
 import {TokenRingService} from "@tokenring-ai/app/types";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
@@ -15,7 +14,7 @@ export default class WebHostService implements TokenRingService {
   name = "WebHostService";
   description = "Fastify web host for serving resources and APIs";
 
-  private server: FastifyInstance;
+  private readonly server: FastifyInstance;
   private port: number;
   private resources = new KeyedRegistry<WebResource>();
   registerResource = this.resources.register;
