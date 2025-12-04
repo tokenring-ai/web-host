@@ -1,22 +1,19 @@
-import fastifyWebsocket from "@fastify/websocket";
 import TokenRingApp from "@tokenring-ai/app";
 
 import {TokenRingService} from "@tokenring-ai/app/types";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import Fastify, {FastifyInstance} from "fastify";
 import {z} from "zod";
+import {WebHostConfigSchema} from "./index.ts";
 import type {WebResource} from "./types.js";
-
-export const WebHostConfigSchema = z.object({
-  port: z.number().optional()
-})
 
 export default class WebHostService implements TokenRingService {
   name = "WebHostService";
   description = "Fastify web host for serving resources and APIs";
 
   private readonly app: TokenRingApp;
-  private readonly server: FastifyInstance;
+  private server!: FastifyInstance;
+
   port: number;
   resources = new KeyedRegistry<WebResource>();
   registerResource = this.resources.register;
@@ -24,17 +21,19 @@ export default class WebHostService implements TokenRingService {
   constructor(app: TokenRingApp, {port}: z.infer<typeof WebHostConfigSchema>) {
     this.app = app;
     this.port = port ?? 0;
-    this.server = Fastify({logger: false});
   }
 
-  async start(): Promise<void> {
-    await this.server.register(fastifyWebsocket);
-
+  async start() {
+    this.server = Fastify({logger: false, ignoreTrailingSlash: true});
     for (const resource of this.resources.getAllItemValues()) {
       await resource.register(this.server);
     }
 
+    console.log(this.server.printRoutes());
+
     await this.server.listen({port: this.port, host: "0.0.0.0"});
+    console.log(this.server.server.address());
+
     if (this.port === 0) {
       if (this.server.addresses().length === 0) {
         throw new Error("Failed to get port");

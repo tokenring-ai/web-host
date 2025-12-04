@@ -1,10 +1,17 @@
 import {AgentCommandService} from "@tokenring-ai/agent";
-import TokenRingApp from "@tokenring-ai/app";
-import {TokenRingPlugin} from "@tokenring-ai/app";
-import packageJSON from "./package.json" with {type: "json"};
-import WebHostService, {WebHostConfigSchema} from "./WebHostService.js";
+import TokenRingApp, {TokenRingPlugin} from "@tokenring-ai/app";
+import {z} from "zod";
 import webhost from "./commands/webhost.js";
+import packageJSON from "./package.json" with {type: "json"};
+import StaticResource, {staticResourceConfigSchema} from "./StaticResource.ts";
+import WebHostService from "./WebHostService.js";
 
+export const WebHostConfigSchema = z.object({
+  port: z.number().optional(),
+  resources: z.record(z.string(), z.discriminatedUnion("type", [
+    staticResourceConfigSchema,
+  ])).optional(),
+})
 export default {
   name: packageJSON.name,
   version: packageJSON.version,
@@ -12,19 +19,24 @@ export default {
   install(app: TokenRingApp) {
     const config = app.getConfigSlice("webHost", WebHostConfigSchema.optional());
     if (config) {
-      app.addServices(new WebHostService(app,config));
+      const webHostService = new WebHostService(app, config);
+      app.addServices(webHostService);
+
       app.waitForService(AgentCommandService, service => {
-        service.addAgentCommands({ webhost });
+        service.addAgentCommands({webhost});
       });
+
+      for (const resourceName in config.resources) {
+        const resourceConfig = config.resources[resourceName];
+        if (resourceConfig.type === 'static') {
+          console.log(`Registering static resource ${resourceName}`);
+          webHostService.registerResource(resourceName, new StaticResource(staticResourceConfigSchema.parse(resourceConfig)));
+        }
+      }
     }
-},
-  async start(app: TokenRingApp) {
-    const service = app.getService(WebHostService);
-    if (service) {
-      await service.start();
-    }
-  },
+  }
 } as TokenRingPlugin;
 
 export {default as WebHostService} from "./WebHostService.js";
+export {default as StaticResource} from "./StaticResource.js";
 export type {WebResource} from "./types.js";

@@ -8,7 +8,6 @@
   "@tokenring-ai/chat": "0.2.0",
   "@tokenring-ai/utility": "0.2.0",
   "fastify": "^5.6.2",
-  "@fastify/websocket": "^11.2.0",
   "@fastify/static": "^8.3.0",
   "zod": "^4.1.13"
  },
