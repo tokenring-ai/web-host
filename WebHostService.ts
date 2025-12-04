@@ -1,4 +1,5 @@
 import fastifyWebsocket from "@fastify/websocket";
+import TokenRingApp from "@tokenring-ai/app";
 
 import {TokenRingService} from "@tokenring-ai/app/types";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
@@ -14,12 +15,14 @@ export default class WebHostService implements TokenRingService {
   name = "WebHostService";
   description = "Fastify web host for serving resources and APIs";
 
+  private readonly app: TokenRingApp;
   private readonly server: FastifyInstance;
-  private port: number;
-  private resources = new KeyedRegistry<WebResource>();
+  port: number;
+  resources = new KeyedRegistry<WebResource>();
   registerResource = this.resources.register;
 
-  constructor({port}: z.infer<typeof WebHostConfigSchema>) {
+  constructor(app: TokenRingApp, {port}: z.infer<typeof WebHostConfigSchema>) {
+    this.app = app;
     this.port = port ?? 0;
     this.server = Fastify({logger: false});
   }
@@ -39,14 +42,11 @@ export default class WebHostService implements TokenRingService {
 
       this.port = this.server.addresses()[0].port;
     }
-    console.log(`WebHost listening on port ${this.port}`);
+
+    this.app.serviceOutput(`WebHost listening on port ${this.port}`);
   }
 
   async stop(): Promise<void> {
     await this.server.close();
-  }
-
-  getServer(): FastifyInstance {
-    return this.server;
   }
 }
