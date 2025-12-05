@@ -8,10 +8,10 @@ export type FunctionTypeOfRPCCall<T extends JsonRPCSchema, K extends keyof T["me
 
 
 let rpcId = 0;
-export default function createJsonRPCClient<T extends JsonRPCSchema>(schemas: T) {
+export default function createJsonRPCClient<T extends JsonRPCSchema>(baseURL: URL, schemas: T) {
   return Object.fromEntries(
     Object.keys(schemas.methods).map(name =>
-      [name, createJsonRPCFetchMethod(schemas, name)]
+      [name, createJsonRPCFetchMethod(baseURL, schemas, name)]
     )
   ) as {
     [K in keyof T["methods"]]: FunctionTypeOfRPCCall<T, K>;
@@ -19,11 +19,13 @@ export default function createJsonRPCClient<T extends JsonRPCSchema>(schemas: T)
 }
 
 function createJsonRPCFetchMethod<T extends JsonRPCSchema, K extends keyof T["methods"]>(
+  baseURL: URL,
   schemas: T,
   key: K
 ) {
   return async (params:  z.infer<T["methods"][K]["input"]>): Promise<z.infer<T["methods"][K]["result"]>> => {
-    const response = await fetch(schemas.path, {
+    const url = new URL(schemas.path, baseURL);
+    const response = await fetch(url, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
