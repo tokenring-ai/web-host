@@ -32,10 +32,9 @@ function execute(_remainder: string | undefined, agent: Agent): void {
     return;
   }
 
-  const port = webHost.port;
   const resources = webHost.resources.getAllItemNames();
 
-  agent.infoLine(`Web host running at: http://localhost:${port}`);
+  agent.infoLine(`Web host running at: ${webHost.getURL()}`);
   
   if (resources.length > 0) {
     agent.infoLine("Registered resources:");

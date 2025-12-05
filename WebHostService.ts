@@ -11,38 +11,35 @@ export default class WebHostService implements TokenRingService {
   name = "WebHostService";
   description = "Fastify web host for serving resources and APIs";
 
-  private readonly app: TokenRingApp;
   private server!: FastifyInstance;
 
-  port: number;
   resources = new KeyedRegistry<WebResource>();
   registerResource = this.resources.register;
 
-  constructor(app: TokenRingApp, {port}: z.infer<typeof WebHostConfigSchema>) {
-    this.app = app;
-    this.port = port ?? 0;
-  }
+  constructor(private app: TokenRingApp, private config: z.output<typeof WebHostConfigSchema>) {}
 
   async start() {
-    this.server = Fastify({logger: false, ignoreTrailingSlash: true});
+    this.server = Fastify({logger: false, routerOptions: {ignoreTrailingSlash: true}});
     for (const resource of this.resources.getAllItemValues()) {
       await resource.register(this.server);
     }
 
-    console.log(this.server.printRoutes());
+    //console.log(this.server.printRoutes());
+    await this.server.listen({port: this.config.port, host: this.config.host});
 
-    await this.server.listen({port: this.port, host: "0.0.0.0"});
-    console.log(this.server.server.address());
+    this.app.serviceOutput(`WebHost listening at ${this.getURL()}`);
+  }
 
-    if (this.port === 0) {
+  getURL(): URL {
+    let port = this.config.port;
+    if (! port) {
       if (this.server.addresses().length === 0) {
         throw new Error("Failed to get port");
       }
 
-      this.port = this.server.addresses()[0].port;
+      port = this.server.addresses()[0].port;
     }
-
-    this.app.serviceOutput(`WebHost listening on port ${this.port}`);
+    return new URL(`http://${this.config.host}:${port}`);
   }
 
   async stop(): Promise<void> {

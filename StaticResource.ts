@@ -6,7 +6,9 @@ import {z} from "zod";
 
 export const staticResourceConfigSchema = z.object({
   type: z.literal("static"),
-  directory: z.string(),
+  root: z.string(),
+  description: z.string(),
+  indexFile: z.string(),
   notFoundFile: z.string().optional(),
   prefix: z.string()
 });
@@ -14,25 +16,18 @@ export const staticResourceConfigSchema = z.object({
 export default class StaticResource implements WebResource {
   name = "StaticResource";
 
-  readonly directory: string;
-  readonly notFoundFile: string | undefined;
-  readonly prefix: string;
-
-  constructor(config: z.output<typeof staticResourceConfigSchema>) {
-    this.directory = config.directory;
-    this.notFoundFile = config.notFoundFile;
-    this.prefix = config.prefix;
-  }
+  constructor(private config: z.output<typeof staticResourceConfigSchema>) {}
 
   async register(server: FastifyInstance): Promise<void> {
     await server.register(fastifyStatic, {
-      root: this.directory,
-      prefix: this.prefix,
+      root: this.config.root,
+      prefix: this.config.prefix,
+      index: this.config.indexFile
     });
 
-    if (this.notFoundFile) {
+    if (this.config.notFoundFile) {
       server.setNotFoundHandler((request, reply) => {
-        reply.sendFile(this.notFoundFile!);
+        reply.sendFile(this.config.notFoundFile!); //, this.config.root);
       });
     }
   }
