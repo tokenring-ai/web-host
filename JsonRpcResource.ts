@@ -1,6 +1,6 @@
 import TokenRingApp from "@tokenring-ai/app";
 import {FastifyInstance} from "fastify";
-import {JsonRpcEndpoint} from "./jsonrpc/types.ts";
+import {JsonRpcEndpoint, JsonRpcMethod} from "./jsonrpc/types.ts";
 import {WebResource} from "./types.ts";
 
 export default class JsonRpcResource implements WebResource {
@@ -10,30 +10,53 @@ export default class JsonRpcResource implements WebResource {
 
   async register(server: FastifyInstance): Promise<void> {
     server.post(this.jsonRpcEndpoint.path, async (request, reply) => {
-      const response = await this.handle(request.body);
-      reply.send(response);
+      const {jsonrpc, id, method, params = []} = request.body as any;
+
+      if (jsonrpc !== "2.0") {
+        return reply.send({jsonrpc: "2.0", id, error: {code: -32600, message: "Invalid Request"}});
+      }
+
+      const handler = this.jsonRpcEndpoint.methods[method];
+      if (!handler) {
+        return reply.send({jsonrpc: "2.0", id, error: {code: -32601, message: "Method not found"}});
+      }
+
+      try {
+        const validatedParams = handler.inputSchema.parse(params);
+
+        if (handler.type === "stream") {
+          return this.handleStream(id, handler, validatedParams, reply);
+        }
+        const result = (handler as JsonRpcMethod<any, any, "query" | "mutation">).execute(validatedParams, this.app);
+
+        const validatedResult = handler.resultSchema.parse(await result);
+        return reply.send({jsonrpc: "2.0", id, result: validatedResult});
+      } catch (error: any) {
+        return reply.send({jsonrpc: "2.0", id, error: {code: -32603, message: error.message}});
+      }
     });
   }
 
-  async handle(request: any): Promise<any> {
-    const {jsonrpc, id, method, params = []} = request;
+  private async handleStream(id: any, handler: JsonRpcMethod<any, any, "stream">, validatedParams: any, reply: any): Promise<void> {
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive'
+    });
 
-    if (jsonrpc !== "2.0") {
-      return {jsonrpc: "2.0", id, error: {code: -32600, message: "Invalid Request"}};
-    }
-
-    const handler = this.jsonRpcEndpoint.methods[method];
-    if (!handler) {
-      return {jsonrpc: "2.0", id, error: {code: -32601, message: "Method not found"}};
-    }
+    const abortController = new AbortController();
 
     try {
-      const validatedParams = handler.inputSchema.parse(params);
-      const result = await handler.execute(validatedParams, this.app);
-      const validatedResult = handler.resultSchema.parse(result);
-      return {jsonrpc: "2.0", id, result: validatedResult};
+      const result = handler.execute(validatedParams, this.app, abortController.signal) as AsyncGenerator<any>;
+      for await (const event of result) {
+        reply.raw.write(`data: ${JSON.stringify({jsonrpc: "2.0", id, result: event})}\n\n`);
+      }
+      reply.raw.end();
     } catch (error: any) {
-      return {jsonrpc: "2.0", id, error: {code: -32603, message: error.message}};
+      abortController.abort();
+      reply.raw.write(`data: ${JSON.stringify({jsonrpc: "2.0", id, error: {code: -32603, message: error.message}})}\n\n`);
+      reply.raw.end();
     }
   }
+
 }

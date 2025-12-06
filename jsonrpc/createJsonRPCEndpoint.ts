@@ -8,6 +8,7 @@ export function createJsonRPCEndpoint<T extends JsonRPCSchema>(schemas: T, imple
         .map(([name, method]) =>
           [name,
             {
+              type: method.type,
               inputSchema: method.input,
               resultSchema: method.result,
               execute: implementation[name as keyof T["methods"]],
