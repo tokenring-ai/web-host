@@ -1,6 +1,7 @@
 import {AgentCommandService} from "@tokenring-ai/agent";
 import TokenRingApp, {TokenRingPlugin} from "@tokenring-ai/app";
 import {z} from "zod";
+import {AuthConfigSchema} from "./auth.ts";
 import webhost from "./commands/webhost.js";
 import packageJSON from "./package.json" with {type: "json"};
 import StaticResource, {staticResourceConfigSchema} from "./StaticResource.ts";
@@ -9,6 +10,7 @@ import WebHostService from "./WebHostService.js";
 export const WebHostConfigSchema = z.object({
   host: z.string().default("127.0.0.1"),
   port: z.number().optional(),
+  auth: AuthConfigSchema.optional(),
   resources: z.record(z.string(), z.discriminatedUnion("type", [
     staticResourceConfigSchema,
   ])).optional(),

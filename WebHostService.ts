@@ -4,6 +4,7 @@ import {TokenRingService} from "@tokenring-ai/app/types";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import Fastify, {FastifyInstance} from "fastify";
 import {z} from "zod";
+import {registerAuth} from "./auth.ts";
 import {WebHostConfigSchema} from "./index.ts";
 import type {WebResource} from "./types.js";
 
@@ -20,6 +21,11 @@ export default class WebHostService implements TokenRingService {
 
   async start() {
     this.server = Fastify({logger: false, routerOptions: {ignoreTrailingSlash: true}});
+    
+    if (this.config.auth) {
+      registerAuth(this.server, this.config.auth);
+    }
+    
     for (const resource of this.resources.getAllItemValues()) {
       await resource.register(this.server);
     }

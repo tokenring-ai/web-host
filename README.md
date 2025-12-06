@@ -149,12 +149,82 @@ class WebHostService implements TokenRingService {
 
 ```typescript
 const WebHostConfigSchema = z.object({
-  port: z.number().optional()
+  host: z.string().default("127.0.0.1"),
+  port: z.number().optional(),
+  auth: z.object({
+    users: z.record(z.string(), z.object({
+      password: z.string().optional(),
+      bearerToken: z.string().optional(),
+    }))
+  }).optional(),
+  resources: z.record(z.string(), ...).optional()
 });
 ```
 
 **Configuration Options:**
+- `host`: Host address to bind to (default: "127.0.0.1")
 - `port`: Port number to listen on. If 0 or not specified, the system will automatically assign an available port.
+- `auth`: Optional authentication configuration with per-user credentials
+  - `users`: Record of username to credentials mapping
+    - `password`: Optional password for Basic authentication
+    - `bearerToken`: Optional bearer token for Bearer authentication
+- `resources`: Optional web resources to register
+
+## Authentication
+
+The web-host supports both Basic and Bearer token authentication on a per-user basis.
+
+### Configuration Example
+
+```typescript
+const app = new TokenRingApp({
+  webHost: {
+    port: 3000,
+    auth: {
+      users: {
+        "admin": {
+          password: "secret123",
+          bearerToken: "admin-token-xyz"
+        },
+        "api-user": {
+          bearerToken: "api-key-abc123"
+        },
+        "basic-user": {
+          password: "password456"
+        }
+      }
+    }
+  }
+});
+```
+
+### Using Authentication
+
+**Basic Authentication:**
+```bash
+curl -u admin:secret123 http://localhost:3000/api/status
+```
+
+**Bearer Token Authentication:**
+```bash
+curl -H "Authorization: Bearer admin-token-xyz" http://localhost:3000/api/status
+```
+
+### Accessing User Information
+
+Authenticated username is available in request handlers:
+
+```typescript
+class MyResource implements WebResource {
+  name = "MyResource";
+
+  async register(server: FastifyInstance): Promise<void> {
+    server.get("/api/whoami", async (request) => {
+      return { user: (request as any).user };
+    });
+  }
+}
+```
 
 ## Examples
 
