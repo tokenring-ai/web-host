@@ -32,7 +32,6 @@ export default {
       for (const resourceName in config.resources) {
         const resourceConfig = config.resources[resourceName];
         if (resourceConfig.type === 'static') {
-          console.log(`Registering static resource ${resourceName}`);
           webHostService.registerResource(resourceName, new StaticResource(staticResourceConfigSchema.parse(resourceConfig)));
         }
       }
