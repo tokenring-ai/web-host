@@ -1,22 +1,29 @@
 import TokenRingApp from "@tokenring-ai/app";
+import pickValue from "@tokenring-ai/utility/object/pickValue";
 import {FastifyInstance} from "fastify";
+import {z} from "zod";
 import {JsonRpcEndpoint, JsonRpcMethod} from "./jsonrpc/types.ts";
 import {WebResource} from "./types.ts";
 
-export default class JsonRpcResource implements WebResource {
-  name = "JsonRpcResource";
+const jsonBodySchema = z.object({
+  jsonrpc: z.string(),
+  id: z.number(),
+  method: z.string(),
+  params: z.unknown().optional()
+});
 
+export default class JsonRpcResource implements WebResource {
   constructor(private app: TokenRingApp, private jsonRpcEndpoint: JsonRpcEndpoint) {}
 
   async register(server: FastifyInstance): Promise<void> {
     server.post(this.jsonRpcEndpoint.path, async (request, reply) => {
-      const {jsonrpc, id, method, params = []} = request.body as any;
+      const {jsonrpc, id, method, params = []} = jsonBodySchema.parse(request.body);
 
       if (jsonrpc !== "2.0") {
         return reply.send({jsonrpc: "2.0", id, error: {code: -32600, message: "Invalid Request"}});
       }
 
-      const handler = this.jsonRpcEndpoint.methods[method];
+      const handler = pickValue(this.jsonRpcEndpoint.methods, method)
       if (!handler) {
         return reply.send({jsonrpc: "2.0", id, error: {code: -32601, message: "Method not found"}});
       }
@@ -37,7 +44,7 @@ export default class JsonRpcResource implements WebResource {
     });
   }
 
-  private async handleStream(id: any, handler: JsonRpcMethod<any, any, "stream">, validatedParams: any, reply: any): Promise<void> {
+  private async handleStream(id: number, handler: JsonRpcMethod<any, any, "stream">, validatedParams: any, reply: any): Promise<void> {
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',

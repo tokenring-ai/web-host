@@ -4,6 +4,7 @@ import {z} from "zod";
 import {AuthConfigSchema} from "./auth.ts";
 import webhost from "./commands/webhost.js";
 import packageJSON from "./package.json" with {type: "json"};
+import SPAResource, {spaResourceConfigSchema} from "./SPAResource.ts";
 import StaticResource, {staticResourceConfigSchema} from "./StaticResource.ts";
 import WebHostService from "./WebHostService.js";
 
@@ -13,6 +14,7 @@ export const WebHostConfigSchema = z.object({
   auth: AuthConfigSchema.optional(),
   resources: z.record(z.string(), z.discriminatedUnion("type", [
     staticResourceConfigSchema,
+    spaResourceConfigSchema,
   ])).optional(),
 })
 export default {
@@ -33,6 +35,10 @@ export default {
         const resourceConfig = config.resources[resourceName];
         if (resourceConfig.type === 'static') {
           webHostService.registerResource(resourceName, new StaticResource(staticResourceConfigSchema.parse(resourceConfig)));
+        }
+
+        if (resourceConfig.type === 'spa') {
+          webHostService.registerResource(resourceName, new SPAResource(spaResourceConfigSchema.parse(resourceConfig)));
         }
       }
     }

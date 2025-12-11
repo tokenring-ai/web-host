@@ -14,8 +14,6 @@ export const staticResourceConfigSchema = z.object({
 });
 
 export default class StaticResource implements WebResource {
-  name = "StaticResource";
-
   constructor(private config: z.output<typeof staticResourceConfigSchema>) {}
 
   async register(server: FastifyInstance): Promise<void> {
