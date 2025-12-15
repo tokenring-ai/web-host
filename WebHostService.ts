@@ -1,6 +1,7 @@
 import TokenRingApp from "@tokenring-ai/app";
 
 import {TokenRingService} from "@tokenring-ai/app/types";
+import waitForAbort from "@tokenring-ai/utility/promise/waitForAbort";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import Fastify, {FastifyInstance} from "fastify";
 import {z} from "zod";
@@ -20,7 +21,7 @@ export default class WebHostService implements TokenRingService {
 
   constructor(private app: TokenRingApp, private config: z.output<typeof WebHostConfigSchema>) {}
 
-  async start() {
+  async run(signal: AbortSignal) {
     this.server = Fastify({logger: false, routerOptions: {ignoreTrailingSlash: true}});
     
     if (this.config.auth) {
@@ -35,6 +36,10 @@ export default class WebHostService implements TokenRingService {
     await this.server.listen({port: this.config.port, host: this.config.host});
 
     this.app.serviceOutput(`WebHost listening at ${this.getURL()}`);
+
+    return waitForAbort(signal, async (ev) => {
+      await this.server.close()
+    });
   }
 
   getURL(): URL {
@@ -47,9 +52,5 @@ export default class WebHostService implements TokenRingService {
       port = this.server.addresses()[0].port;
     }
     return new URL(`http://${this.config.host}:${port}`);
-  }
-
-  async stop(): Promise<void> {
-    await this.server.close();
   }
 }
