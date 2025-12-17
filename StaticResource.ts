@@ -1,7 +1,6 @@
 import fastifyStatic from "@fastify/static";
 import type {WebResource} from "@tokenring-ai/web-host/types";
 import type {FastifyInstance} from "fastify";
-import {join} from 'path';
 import {z} from "zod";
 
 export const staticResourceConfigSchema = z.object({
