@@ -24,7 +24,7 @@ Displays the current web host URL and lists all registered resources.
 #   - trpcBackend
 #   - defaultFrontend`;
 
-function execute(_remainder: string | undefined, agent: Agent): void {
+function execute(_remainder: string, agent: Agent): void {
   const webHost = agent.getServiceByType(WebHostService);
   
   if (!webHost) {
