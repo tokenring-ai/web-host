@@ -29,6 +29,10 @@ export function registerAuth(server: FastifyInstance, config: AuthConfig) {
       }
     } else if (auth.startsWith("Basic ")) {
       const decoded = Buffer.from(auth.substring(6), "base64").toString();
+      if (!decoded.includes(":")) {
+        reply.code(401).send({error: "Unauthorized"});
+        return;
+      }
       const [username, password] = decoded.split(":");
       const user = config.users[username];
       if (user?.password === password) {

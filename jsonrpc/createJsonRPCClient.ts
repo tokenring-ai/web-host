@@ -10,6 +10,11 @@ export type FunctionTypeOfRPCCall<T extends JsonRPCSchema, K extends keyof T["me
 
 
 let rpcId = 0;
+
+export function resetRpcId() {
+  rpcId = 0;
+}
+
 export default function createJsonRPCClient<T extends JsonRPCSchema>(baseURL: URL, schemas: T) {
   return Object.fromEntries(
     Object.keys(schemas.methods).map(name =>
