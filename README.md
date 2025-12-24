@@ -21,7 +21,7 @@ The `@tokenring-ai/web-host` package serves as the web foundation for TokenRing 
 ## Installation
 
 ```bash
-npm install @tokenring-ai/web-host
+bun install @tokenring-ai/web-host
 ```
 
 ## Dependencies
@@ -135,6 +135,8 @@ webHostService.registerResource("api", rpcResource);
 ### Configuration Schema
 
 ```typescript
+import { z } from "zod";
+
 const WebHostConfigSchema = z.object({
   host: z.string().default("127.0.0.1"),
   port: z.number().optional(),
@@ -147,8 +149,11 @@ const WebHostConfigSchema = z.object({
   resources: z.record(z.string(), z.discriminatedUnion("type", [
     staticResourceConfigSchema,
     spaResourceConfigSchema,
+    jsonRpcResourceConfigSchema // Note: JSON-RPC resources can also be configured
   ])).optional(),
 });
+
+// Note: JSON-RPC resources can be configured through the resources array
 ```
 
 **Configuration Options:**
@@ -352,7 +357,7 @@ class WebHostService implements TokenRingService {
 
 ```typescript
 interface WebResource {
-  register(server: FastifyInstance): Promise<void> | void;
+  register(server: FastifyInstance): Promise<void>;
 }
 ```
 
@@ -382,6 +387,20 @@ const spaResourceConfigSchema = z.object({
   file: z.string(),
   description: z.string(),
   prefix: z.string()
+});
+```
+
+#### JSON-RPC Resource Config
+
+```typescript
+const jsonRpcResourceConfigSchema = z.object({
+  type: z.literal("jsonrpc"),
+  path: z.string(),
+  methods: z.record(z.string(), z.object({
+    type: z.enum(["query", "mutation", "stream"]),
+    input: z.ZodType,
+    result: z.ZodType
+  }))
 });
 ```
 
