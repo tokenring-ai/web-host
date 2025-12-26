@@ -28,7 +28,6 @@ bun install @tokenring-ai/web-host
 
 - `@tokenring-ai/app`: ^0.2.0
 - `@tokenring-ai/agent`: ^0.2.0
-- `@tokenring-ai/chat`: ^0.2.0
 - `@tokenring-ai/utility`: ^0.2.0
 - `fastify`: ^5.6.2
 - `@fastify/static`: ^8.3.0
@@ -96,40 +95,49 @@ const spaResource = new SPAResource({
 webHostService.registerResource("spa", spaResource);
 ```
 
-#### JSON-RPC Resource
+#### JsonRpcResource
 Provides JSON-RPC 2.0 API endpoints:
 
 ```typescript
 import { JsonRpcResource } from "@tokenring-ai/web-host";
 import { createJsonRPCEndpoint } from "@tokenring-ai/web-host/jsonrpc/createJsonRPCEndpoint";
 
-const rpcSchema = {
-  path: "/api/rpc",
+const calculatorSchema = {
+  path: "/api/calc",
   methods: {
-    getStatus: {
+    add: {
       type: "query" as const,
-      input: z.object({}),
-      result: z.object({ status: z.string() })
+      input: z.object({ a: z.number(), b: z.number() }),
+      result: z.object({ result: z.number() })
     },
-    streamData: {
+    streamResult: {
       type: "stream" as const,
-      input: z.object({ message: z.string() }),
-      result: z.object({ data: z.string() })
+      input: z.object({ steps: z.number() }),
+      result: z.object({ step: z.number(), value: z.number() })
     }
   }
 };
 
-const implementation = {
-  getStatus: async () => ({ status: "ok" }),
-  streamData: async function* (params: { message: string }) {
-    yield { data: `Echo: ${params.message}` };
+const calculator = {
+  add: async (params: { a: number; b: number }, app: TokenRingApp) => ({
+    result: params.a + params.b
+  }),
+  
+  streamResult: async function* (params: { steps: number }, app: TokenRingApp, signal: AbortSignal) {
+    let value = 0;
+    for (let i = 0; i < params.steps; i++) {
+      if (signal.aborted) break;
+      value += Math.random();
+      yield { step: i, value };
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
   }
 };
 
-const endpoint = createJsonRPCEndpoint(rpcSchema, implementation);
+const endpoint = createJsonRPCEndpoint(calculatorSchema, calculator);
 const rpcResource = new JsonRpcResource(app, endpoint);
 
-webHostService.registerResource("api", rpcResource);
+webHostService.registerResource("calculator", rpcResource);
 ```
 
 ### Configuration Schema
@@ -149,7 +157,7 @@ const WebHostConfigSchema = z.object({
   resources: z.record(z.string(), z.discriminatedUnion("type", [
     staticResourceConfigSchema,
     spaResourceConfigSchema,
-    jsonRpcResourceConfigSchema // Note: JSON-RPC resources can also be configured
+    jsonRpcResourceConfigSchema
   ])).optional(),
 });
 
@@ -235,38 +243,18 @@ server.get("/api/whoami", async (request) => {
 ```typescript
 import { z } from "zod";
 
-const myRpcSchema = {
-  path: "/api/rpc",
+const calculatorSchema = {
+  path: "/api/calc",
   methods: {
-    getUser: {
+    add: {
       type: "query" as const,
-      input: z.object({ id: z.number() }),
-      result: z.object({ 
-        id: z.number(),
-        name: z.string(),
-        email: z.string()
-      })
+      input: z.object({ a: z.number(), b: z.number() }),
+      result: z.object({ result: z.number() })
     },
-    createPost: {
-      type: "mutation" as const,
-      input: z.object({ 
-        title: z.string(),
-        content: z.string()
-      }),
-      result: z.object({ 
-        id: z.number(),
-        title: z.string()
-      })
-    },
-    streamUpdates: {
+    streamResult: {
       type: "stream" as const,
-      input: z.object({ 
-        userId: z.number()
-      }),
-      result: z.object({ 
-        type: z.string(),
-        data: z.string()
-      })
+      input: z.object({ steps: z.number() }),
+      result: z.object({ step: z.number(), value: z.number() })
     }
   }
 };
@@ -275,36 +263,18 @@ const myRpcSchema = {
 ### Implementing RPC Methods
 
 ```typescript
-const implementation = {
-  getUser: async (params: { id: number }) => {
-    // Query method - returns a single result
-    return { 
-      id: params.id,
-      name: "John Doe",
-      email: "john@example.com"
-    };
-  },
+const calculator = {
+  add: async (params: { a: number; b: number }, app: TokenRingApp) => ({
+    result: params.a + params.b
+  }),
   
-  createPost: async (params: { title: string; content: string }) => {
-    // Mutation method - creates/modifies data
-    return { 
-      id: Date.now(),
-      title: params.title
-    };
-  },
-  
-  streamUpdates: async function* (params: { userId: number }, signal: AbortSignal) {
-    // Stream method - yields multiple results over time
-    for (let i = 0; i < 5; i++) {
+  streamResult: async function* (params: { steps: number }, app: TokenRingApp, signal: AbortSignal) {
+    let value = 0;
+    for (let i = 0; i < params.steps; i++) {
       if (signal.aborted) break;
-      
-      yield { 
-        type: "update",
-        data: `Update ${i + 1} for user ${params.userId}`
-      };
-      
-      // Wait between updates
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      value += Math.random();
+      yield { step: i, value };
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
 };
@@ -315,13 +285,13 @@ const implementation = {
 ```typescript
 import { createJsonRPCClient } from "@tokenring-ai/web-host/jsonrpc/createJsonRPCClient";
 
-const client = createJsonRPCClient(new URL("http://localhost:3000"), myRpcSchema);
+const client = createJsonRPCClient(new URL("http://localhost:3000"), calculatorSchema);
 
 // Call query/mutation methods
-const user = await client.getUser({ id: 123 });
+const result = await client.add({ a: 5, b: 3 });
 
 // Stream methods return async generators
-for await (const update of client.streamUpdates({ userId: 123 })) {
+for await (const update of client.streamResult({ steps: 5 })) {
   console.log(update);
 }
 ```
@@ -417,7 +387,7 @@ The web-host package provides a `/webhost` command for monitoring:
 # Registered resources:
 #   - static-files
 #   - spa
-#   - api
+#   - calculator
 ```
 
 ## Integration with Other Packages
@@ -425,7 +395,6 @@ The web-host package provides a `/webhost` command for monitoring:
 The web-host package works seamlessly with other TokenRing packages:
 
 - **@tokenring-ai/agent**: Provides RPC endpoints for agent management
-- **@tokenring-ai/chat**: Integration with chat services
 - **@tokenring-ai/app**: Service registration and lifecycle management
 - **@tokenring-ai/utility**: Registry and utility functions
 
@@ -491,13 +460,14 @@ const calculatorSchema = {
 };
 
 const calculator = {
-  add: async (params: { a: number; b: number }) => ({
+  add: async (params: { a: number; b: number }, app: TokenRingApp) => ({
     result: params.a + params.b
   }),
   
-  streamResult: async function* (params: { steps: number }) {
+  streamResult: async function* (params: { steps: number }, app: TokenRingApp, signal: AbortSignal) {
     let value = 0;
     for (let i = 0; i < params.steps; i++) {
+      if (signal.aborted) break;
       value += Math.random();
       yield { step: i, value };
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -515,14 +485,3 @@ webHostService.registerResource("calculator", rpcResource);
 
 MIT License - Copyright (c) 2025 Mark Dierolf
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## Support
-
-For issues and questions, please refer to the main TokenRing repository or create an issue in the appropriate package.
