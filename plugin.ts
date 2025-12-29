@@ -18,7 +18,6 @@ export default {
   version: packageJSON.version,
   description: packageJSON.description,
   install(app, config) {
-    // const config = app.getConfigSlice("webHost", WebHostConfigSchema.optional());
     if (config.webHost) {
       const webHostService = new WebHostService(app, config.webHost);
       app.addServices(webHostService);
