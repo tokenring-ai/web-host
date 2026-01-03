@@ -24,15 +24,6 @@ The `@tokenring-ai/web-host` package serves as the web foundation for TokenRing 
 bun install @tokenring-ai/web-host
 ```
 
-## Dependencies
-
-- `@tokenring-ai/app`: ^0.2.0
-- `@tokenring-ai/agent`: ^0.2.0
-- `@tokenring-ai/utility`: ^0.2.0
-- `fastify`: ^5.6.2
-- `@fastify/static`: ^8.3.0
-- `zod`: catalog
-
 ## Usage
 
 ### Basic Configuration
@@ -62,6 +53,7 @@ await app.start();
 The web-host supports multiple resource types that can be configured or registered programmatically:
 
 #### StaticResource
+
 Serves static files from a directory:
 
 ```typescript
@@ -80,6 +72,7 @@ webHostService.registerResource("public", staticResource);
 ```
 
 #### SPAResource
+
 Serves Single Page Applications with fallback routing:
 
 ```typescript
@@ -96,11 +89,13 @@ webHostService.registerResource("spa", spaResource);
 ```
 
 #### JsonRpcResource
+
 Provides JSON-RPC 2.0 API endpoints:
 
 ```typescript
-import { JsonRpcResource } from "@tokenring-ai/web-host";
+import { JsonRpcResource } from "@tokenring-ai/web-host/JsonRpcResource";
 import { createJsonRPCEndpoint } from "@tokenring-ai/web-host/jsonrpc/createJsonRPCEndpoint";
+import { z } from "zod";
 
 const calculatorSchema = {
   path: "/api/calc",
@@ -156,15 +151,13 @@ const WebHostConfigSchema = z.object({
   }).optional(),
   resources: z.record(z.string(), z.discriminatedUnion("type", [
     staticResourceConfigSchema,
-    spaResourceConfigSchema,
-    jsonRpcResourceConfigSchema
+    spaResourceConfigSchema
   ])).optional(),
 });
-
-// Note: JSON-RPC resources can be configured through the resources array
 ```
 
 **Configuration Options:**
+
 - `host`: Host address to bind to (default: "127.0.0.1")
 - `port`: Port number to listen on. If not specified, the system will automatically assign an available port.
 - `auth`: Optional authentication configuration with per-user credentials
@@ -217,11 +210,13 @@ The web-host supports both Basic and Bearer token authentication on a per-user b
 ### Using Authentication
 
 **Basic Authentication:**
+
 ```bash
 curl -u admin:secret123 http://localhost:3000/api/status
 ```
 
 **Bearer Token Authentication:**
+
 ```bash
 curl -H "Authorization: Bearer admin-token-xyz" http://localhost:3000/api/status
 ```
@@ -318,6 +313,7 @@ class WebHostService implements TokenRingService {
 ```
 
 **Methods:**
+
 - `registerResource(name, resource)`: Register a new web resource
 - `getResources()`: Get all registered resources
 - `getURL()`: Get the current server URL
@@ -332,6 +328,7 @@ interface WebResource {
 ```
 
 **Methods:**
+
 - `register(server)`: Register routes, handlers, or other Fastify functionality
 
 ### Resource Configuration Schemas
@@ -360,19 +357,26 @@ const spaResourceConfigSchema = z.object({
 });
 ```
 
-#### JSON-RPC Resource Config
+### AuthConfig Schema
 
 ```typescript
-const jsonRpcResourceConfigSchema = z.object({
-  type: z.literal("jsonrpc"),
-  path: z.string(),
-  methods: z.record(z.string(), z.object({
-    type: z.enum(["query", "mutation", "stream"]),
-    input: z.ZodType,
-    result: z.ZodType
+const AuthConfigSchema = z.object({
+  users: z.record(z.string(), z.object({
+    password: z.string().optional(),
+    bearerToken: z.string().optional(),
   }))
 });
 ```
+
+### JSON-RPC Type Exports
+
+The package exports the following JSON-RPC types from `jsonrpc/` subdirectory:
+
+- `JsonRPCSchema`: Schema definition for RPC endpoints
+- `JsonRPCImplementation`: Implementation type for RPC methods
+- `JsonRpcEndpoint`: Endpoint type returned by `createJsonRPCEndpoint`
+- `ResultOfRPCCall<T, K>`: Type utility for RPC result types
+- `ParamsOfRPCCall<T, K>`: Type utility for RPC parameter types
 
 ## Commands
 
@@ -440,7 +444,7 @@ await app.start();
 
 ```typescript
 import { createJsonRPCEndpoint } from "@tokenring-ai/web-host/jsonrpc/createJsonRPCEndpoint";
-import { JsonRpcResource } from "@tokenring-ai/web-host/jsonrpc/JsonRpcResource";
+import { JsonRpcResource } from "@tokenring-ai/web-host/JsonRpcResource";
 import { z } from "zod";
 
 const calculatorSchema = {
@@ -481,7 +485,38 @@ const rpcResource = new JsonRpcResource(app, endpoint);
 webHostService.registerResource("calculator", rpcResource);
 ```
 
+### Plugin Configuration Example
+
+```typescript
+import { TokenRingApp } from "@tokenring-ai/app";
+import webHostPackage from "@tokenring-ai/web-host";
+import { StaticResource } from "@tokenring-ai/web-host";
+
+const app = new TokenRingApp({
+  webHost: {
+    port: 3000,
+    host: "0.0.0.0",
+    auth: {
+      users: {
+        "admin": { password: "secret123" }
+      }
+    },
+    resources: {
+      "public": {
+        type: "static",
+        root: "./public",
+        description: "Public files",
+        indexFile: "index.html",
+        prefix: "/"
+      }
+    }
+  }
+});
+
+await app.addPackages([webHostPackage]);
+await app.start();
+```
+
 ## License
 
-MIT License - Copyright (c) 2025 Mark Dierolf
-
+MIT License - see [LICENSE](./LICENSE) file for details.
