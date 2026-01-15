@@ -1,5 +1,6 @@
 import Agent from "@tokenring-ai/agent/Agent";
 import {TokenRingAgentCommand} from "@tokenring-ai/agent/types";
+import markdownList from "@tokenring-ai/utility/string/markdownList";
 import WebHostService from "../WebHostService.js";
 
 const description = "/webhost - Show web host URL and available resources";
@@ -28,22 +29,22 @@ function execute(_remainder: string, agent: Agent): void {
   const webHost = agent.getServiceByType(WebHostService);
   
   if (!webHost) {
-    agent.errorLine("WebHostService is not running");
+    agent.errorMessage("WebHostService is not running");
     return;
   }
 
   const resources = webHost.resources.getAllItemNames();
 
-  agent.infoLine(`Web host running at: ${webHost.getURL()}`);
+  const lines: string[] = [`Web host running at: ${webHost.getURL()}`];
   
   if (resources.length > 0) {
-    agent.infoLine("Registered resources:");
-    for (const name of resources) {
-      agent.infoLine(`  - ${name}`);
-    }
+    lines.push("Registered resources:");
+    lines.push(markdownList(resources));
   } else {
-    agent.infoLine("No resources registered");
+    lines.push("No resources registered");
   }
+
+  agent.infoMessage(lines.join("\n"));
 }
 
 export default {

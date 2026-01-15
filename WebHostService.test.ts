@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import Fastify, { FastifyInstance } from 'fastify';
-import WebHostService from './WebHostService';
-import createTestingApp from '@tokenring-ai/app/test/createTestingApp';
 import TokenRingApp from '@tokenring-ai/app';
-import { WebResource } from './types';
+import createTestingApp from '@tokenring-ai/app/test/createTestingApp';
+import Fastify, {FastifyInstance} from 'fastify';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
+import {WebResource} from './types';
+import WebHostService from './WebHostService';
 
 vi.mock('@tokenring-ai/utility/promise/waitForAbort', () => ({
   default: vi.fn().mockResolvedValue(undefined)

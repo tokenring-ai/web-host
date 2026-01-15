@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { FastifyInstance } from 'fastify';
-import StaticResource, { staticResourceConfigSchema } from './StaticResource';
+import {FastifyInstance} from 'fastify';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
+import StaticResource, {staticResourceConfigSchema} from './StaticResource';
 
 // Mock fastify-static
 vi.mock('@fastify/static', () => ({

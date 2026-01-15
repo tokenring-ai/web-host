@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createJsonRPCEndpoint } from './createJsonRPCEndpoint';
-import { JsonRPCSchema, JsonRPCImplementation } from './types';
-import { z } from 'zod';
 import TokenRingApp from '@tokenring-ai/app';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {z} from 'zod';
+import {createJsonRPCEndpoint} from './createJsonRPCEndpoint';
+import {JsonRPCImplementation, JsonRPCSchema} from './types';
 
 // Mock TokenRingApp
 vi.mock('@tokenring-ai/app', () => ({

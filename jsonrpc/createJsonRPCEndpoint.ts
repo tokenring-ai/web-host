@@ -1,4 +1,4 @@
-import type {JsonRPCSchema, JsonRPCImplementation, JsonRpcEndpoint} from "./types.ts";
+import type {JsonRpcEndpoint, JsonRPCImplementation, JsonRPCSchema} from "./types.ts";
 
 export function createJsonRPCEndpoint<T extends JsonRPCSchema>(schemas: T, implementation: JsonRPCImplementation<T>) {
   return {

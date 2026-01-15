@@ -1,9 +1,9 @@
 import fastifyStatic from "@fastify/static";
 import type {WebResource} from "@tokenring-ai/web-host/types";
 import type {FastifyInstance} from "fastify";
+import fs from 'fs/promises';
 import path from 'path';
 import {z} from "zod";
-import fs from 'fs/promises';
 
 export const spaResourceConfigSchema = z.object({
   type: z.literal("spa"),

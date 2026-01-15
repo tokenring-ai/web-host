@@ -1,10 +1,9 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { FastifyInstance } from 'fastify';
-import JsonRpcResource from './JsonRpcResource';
-import TokenRingApp from '@tokenring-ai/app';
 import createTestingApp from '@tokenring-ai/app/test/createTestingApp';
-import { JsonRpcEndpoint } from './jsonrpc/types';
-import { z } from 'zod';
+import {FastifyInstance} from 'fastify';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
+import {z} from 'zod';
+import {JsonRpcEndpoint} from './jsonrpc/types';
+import JsonRpcResource from './JsonRpcResource';
 
 describe('JsonRpcResource', () => {
   let resource: JsonRpcResource;

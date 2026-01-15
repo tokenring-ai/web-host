@@ -1,14 +1,14 @@
-import createTestingApp from "@tokenring-ai/app/test/createTestingApp";
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import Fastify, { FastifyInstance } from 'fastify';
-import WebHostService from './WebHostService';
-import StaticResource, { staticResourceConfigSchema } from './StaticResource';
-import SPAResource, { spaResourceConfigSchema } from './SPAResource';
-import JsonRpcResource from './JsonRpcResource';
-import { registerAuth } from './auth';
-import { createJsonRPCEndpoint } from './jsonrpc/createJsonRPCEndpoint';
 import TokenRingApp from '@tokenring-ai/app';
-import { z } from 'zod';
+import createTestingApp from "@tokenring-ai/app/test/createTestingApp";
+import Fastify, {FastifyInstance} from 'fastify';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
+import {z} from 'zod';
+import {registerAuth} from './auth';
+import {createJsonRPCEndpoint} from './jsonrpc/createJsonRPCEndpoint';
+import JsonRpcResource from './JsonRpcResource';
+import SPAResource, {spaResourceConfigSchema} from './SPAResource';
+import StaticResource, {staticResourceConfigSchema} from './StaticResource';
+import WebHostService from './WebHostService';
 
 vi.mock('@tokenring-ai/utility/promise/waitForAbort', () => ({
   default: vi.fn()

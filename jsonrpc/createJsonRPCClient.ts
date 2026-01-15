@@ -1,7 +1,6 @@
 import {z} from "zod";
 import type {JsonRPCSchema} from "./types.ts";
 
-
 export type ResultOfRPCCall<T extends JsonRPCSchema, K extends keyof T["methods"]> = z.infer<T["methods"][K]["result"]>;
 export type ParamsOfRPCCall<T extends JsonRPCSchema, K extends keyof T["methods"]> = z.infer<T["methods"][K]["input"]>;
 export type FunctionTypeOfRPCCall<T extends JsonRPCSchema, K extends keyof T["methods"]> = T["methods"][K]["type"] extends "stream"

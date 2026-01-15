@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { FastifyInstance } from 'fastify';
-import SPAResource, { spaResourceConfigSchema } from './SPAResource';
+import {FastifyInstance} from 'fastify';
 import fs from 'fs/promises';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
+import SPAResource, {spaResourceConfigSchema} from './SPAResource';
 
 // Mock fs/promises
 vi.mock('fs/promises', () => ({

@@ -1,11 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import createJsonRPCClient, { 
-  ResultOfRPCCall, 
-  ParamsOfRPCCall,
-  resetRpcId
-} from './createJsonRPCClient';
-import { JsonRPCSchema } from './types';
-import { z } from 'zod';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {z} from 'zod';
+import createJsonRPCClient, {ParamsOfRPCCall, resetRpcId, ResultOfRPCCall} from './createJsonRPCClient';
+import {JsonRPCSchema} from './types';
 
 // Mock fetch
 global.fetch = vi.fn();
