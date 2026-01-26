@@ -4,7 +4,7 @@ import Fastify, {FastifyInstance} from 'fastify';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {z} from 'zod';
 import {registerAuth} from './auth';
-import {createJsonRPCEndpoint} from './jsonrpc/createJsonRPCEndpoint';
+import {createRPCEndpoint} from '@tokenring-ai/rpc/createRPCEndpoint';
 import JsonRpcResource from './JsonRpcResource';
 import SPAResource, {spaResourceConfigSchema} from './SPAResource';
 import StaticResource, {staticResourceConfigSchema} from './StaticResource';
@@ -143,7 +143,7 @@ describe('WebHost Integration Tests', () => {
         }
       };
 
-      const endpoint = createJsonRPCEndpoint(schemas, implementation);
+      const endpoint = createRPCEndpoint(schemas, implementation);
       const resource = new JsonRpcResource(mockApp, endpoint);
 
       expect(endpoint.path).toBe('/api/rpc');

@@ -2,7 +2,7 @@ import TokenRingApp from "@tokenring-ai/app";
 import pickValue from "@tokenring-ai/utility/object/pickValue";
 import {FastifyInstance} from "fastify";
 import {z} from "zod";
-import {JsonRpcEndpoint, JsonRpcMethod} from "./jsonrpc/types.ts";
+import {RpcEndpoint, RpcMethod} from "@tokenring-ai/rpc/types";
 import {WebResource} from "./types.ts";
 
 const jsonBodySchema = z.object({
@@ -13,7 +13,7 @@ const jsonBodySchema = z.object({
 });
 
 export default class JsonRpcResource implements WebResource {
-  constructor(private app: TokenRingApp, private jsonRpcEndpoint: JsonRpcEndpoint) {}
+  constructor(private app: TokenRingApp, private jsonRpcEndpoint: RpcEndpoint) {}
 
   async register(server: FastifyInstance): Promise<void> {
     server.post(this.jsonRpcEndpoint.path, async (request, reply) => {
@@ -34,7 +34,7 @@ export default class JsonRpcResource implements WebResource {
         if (handler.type === "stream") {
           return this.handleStream(id, handler, validatedParams, reply);
         }
-        const result = (handler as JsonRpcMethod<any, any, "query" | "mutation">).execute(validatedParams, this.app);
+        const result = (handler as RpcMethod<any, any, "query" | "mutation">).execute(validatedParams, this.app);
 
         const validatedResult = handler.resultSchema.parse(await result);
         return reply.send({jsonrpc: "2.0", id, result: validatedResult});
@@ -44,7 +44,7 @@ export default class JsonRpcResource implements WebResource {
     });
   }
 
-  private async handleStream(id: number, handler: JsonRpcMethod<any, any, "stream">, validatedParams: any, reply: any): Promise<void> {
+  private async handleStream(id: number, handler: RpcMethod<any, any, "stream">, validatedParams: any, reply: any): Promise<void> {
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',

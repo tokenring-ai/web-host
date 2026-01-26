@@ -1,13 +1,13 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {z} from 'zod';
 import createJsonRPCClient, {ParamsOfRPCCall, resetRpcId, ResultOfRPCCall} from './createJsonRPCClient';
-import {JsonRPCSchema} from './types';
+import {RPCSchema} from '@tokenring-ai/rpc/types';
 
 // Mock fetch
 global.fetch = vi.fn();
 
 describe('createJsonRPCClient', () => {
-  let schemas: JsonRPCSchema;
+  let schemas: RPCSchema;
   let baseURL: URL;
 
   beforeEach(() => {
@@ -156,7 +156,7 @@ describe('createJsonRPCClient', () => {
   });
 
   it('should handle empty methods', () => {
-    const emptySchemas: JsonRPCSchema = {
+    const emptySchemas: RPCSchema = {
       path: '/api/empty',
       methods: {}
     };
@@ -167,7 +167,7 @@ describe('createJsonRPCClient', () => {
   });
 
   it('should handle single method', () => {
-    const singleMethodSchemas: JsonRPCSchema = {
+    const singleMethodSchemas: RPCSchema = {
       path: '/api/single',
       methods: {
         ping: {

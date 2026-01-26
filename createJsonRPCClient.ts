@@ -1,9 +1,9 @@
 import {z} from "zod";
-import type {JsonRPCSchema} from "./types.ts";
+import type {RPCSchema} from "@tokenring-ai/rpc/types";
 
-export type ResultOfRPCCall<T extends JsonRPCSchema, K extends keyof T["methods"]> = z.infer<T["methods"][K]["result"]>;
-export type ParamsOfRPCCall<T extends JsonRPCSchema, K extends keyof T["methods"]> = z.infer<T["methods"][K]["input"]>;
-export type FunctionTypeOfRPCCall<T extends JsonRPCSchema, K extends keyof T["methods"]> = T["methods"][K]["type"] extends "stream"
+export type ResultOfRPCCall<T extends RPCSchema, K extends keyof T["methods"]> = z.infer<T["methods"][K]["result"]>;
+export type ParamsOfRPCCall<T extends RPCSchema, K extends keyof T["methods"]> = z.infer<T["methods"][K]["input"]>;
+export type FunctionTypeOfRPCCall<T extends RPCSchema, K extends keyof T["methods"]> = T["methods"][K]["type"] extends "stream"
   ? (params: ParamsOfRPCCall<T, K>, signal: AbortSignal) => AsyncGenerator<ResultOfRPCCall<T, K>>
   : (params: ParamsOfRPCCall<T, K>) => Promise<ResultOfRPCCall<T, K>>;
 
@@ -14,7 +14,7 @@ export function resetRpcId() {
   rpcId = 0;
 }
 
-export default function createJsonRPCClient<T extends JsonRPCSchema>(baseURL: URL, schemas: T) {
+export default function createJsonRPCClient<T extends RPCSchema>(baseURL: URL, schemas: T) {
   return Object.fromEntries(
     Object.keys(schemas.methods).map(name =>
       [
@@ -29,7 +29,7 @@ export default function createJsonRPCClient<T extends JsonRPCSchema>(baseURL: UR
   }
 }
 
-function createJsonRPCFetchMethod<T extends JsonRPCSchema, K extends keyof T["methods"]>(
+function createJsonRPCFetchMethod<T extends RPCSchema, K extends keyof T["methods"]>(
   baseURL: URL,
   schemas: T,
   key: K
@@ -52,7 +52,7 @@ function createJsonRPCFetchMethod<T extends JsonRPCSchema, K extends keyof T["me
     };
 }
 
-function createJsonRPCStream<T extends JsonRPCSchema, K extends keyof T["methods"]>(
+function createJsonRPCStream<T extends RPCSchema, K extends keyof T["methods"]>(
   baseURL: URL,
   schemas: T,
   key: K

@@ -2,14 +2,14 @@ import createTestingApp from '@tokenring-ai/app/test/createTestingApp';
 import {FastifyInstance} from 'fastify';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {z} from 'zod';
-import {JsonRpcEndpoint} from './jsonrpc/types';
+import {RpcEndpoint} from '@tokenring-ai/rpc/types';
 import JsonRpcResource from './JsonRpcResource';
 
 describe('JsonRpcResource', () => {
   let resource: JsonRpcResource;
   let mockApp: any;
   let mockServer: FastifyInstance;
-  let mockEndpoint: JsonRpcEndpoint;
+  let mockEndpoint: RpcEndpoint;
 
   beforeEach(() => {
     mockApp = createTestingApp();
