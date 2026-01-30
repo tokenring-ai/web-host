@@ -4,12 +4,13 @@ import {RpcService} from "@tokenring-ai/rpc";
 
 import {z} from "zod";
 import webhost from "./commands/webhost.js";
-import {WebHostConfigSchema} from "./index.ts";
 import JsonRpcResource from "./JsonRpcResource.ts";
 import packageJSON from "./package.json" with {type: "json"};
+import {WebHostConfigSchema} from "./schema.ts";
 import SPAResource, {spaResourceConfigSchema} from "./SPAResource.ts";
 import StaticResource, {staticResourceConfigSchema} from "./StaticResource.ts";
 import WebHostService from "./WebHostService.js";
+import WsRpcResource from "./WsRpcResource.ts";
 
 const packageConfigSchema = z.object({
   webHost: WebHostConfigSchema.optional()
@@ -49,6 +50,7 @@ export default {
       for (const endpoint of rpcService.getAllEndpoints()) {
         app.serviceOutput(`Registering JSON-RPC endpoint: ${endpoint.path}`);
         webHostService.registerResource(endpoint.name, new JsonRpcResource(app, endpoint));
+        webHostService.registerResource(`${endpoint.name} (WS)`, new WsRpcResource(app, endpoint));
       }
     }
   },

@@ -1,16 +1,7 @@
 import type {FastifyInstance, FastifyReply, FastifyRequest} from "fastify";
-import {z} from "zod";
+import type {ParsedAuthConfig} from "./schema.ts";
 
-export const AuthConfigSchema = z.object({
-  users: z.record(z.string(), z.object({
-    password: z.string().optional(),
-    bearerToken: z.string().optional(),
-  }))
-});
-
-export type AuthConfig = z.infer<typeof AuthConfigSchema>;
-
-export function registerAuth(server: FastifyInstance, config: AuthConfig) {
+export function registerAuth(server: FastifyInstance, config: ParsedAuthConfig) {
   server.addHook("onRequest", async (request: FastifyRequest, reply: FastifyReply) => {
     const auth = request.headers.authorization;
     

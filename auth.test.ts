@@ -1,6 +1,7 @@
 import {FastifyInstance, FastifyReply, FastifyRequest} from 'fastify';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
-import {AuthConfigSchema, registerAuth} from './auth';
+import {registerAuth} from './auth';
+import {AuthConfigSchema} from "./schema";
 
 describe('auth', () => {
   let mockServer: FastifyInstance;
