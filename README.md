@@ -4,7 +4,7 @@ Fastify-based web hosting service for TokenRing applications, providing a plugga
 
 ## Overview
 
-The `@tokenring-ai/web-host` package serves as the web foundation for TokenRing applications. It provides a high-performance web server built on Fastify with a resource registration system that allows different packages to extend web functionality through plugins. The package supports static file serving, SPA routing, JSON-RPC endpoints, and authentication.
+The `@tokenring-ai/web-host` package serves as the web foundation for TokenRing applications. It provides a high-performance web server built on Fastify with a resource registration system that allows different packages to extend web functionality through plugins. The package supports static file serving, SPA routing, JSON-RPC endpoints, WebSocket RPC, and authentication.
 
 ## Features
 
@@ -13,6 +13,7 @@ The `@tokenring-ai/web-host` package serves as the web foundation for TokenRing 
 - **Static File Serving**: Support for serving static files with custom routing
 - **SPA Support**: Single Page Application routing with fallback handling
 - **JSON-RPC API**: Built-in JSON-RPC 2.0 support with streaming capabilities
+- **WebSocket RPC**: WebSocket-based RPC endpoints for real-time communication
 - **Authentication**: Basic and Bearer token authentication
 - **Plugin Integration**: Seamless integration with TokenRing plugin system
 - **Configuration Validation**: Zod-based configuration schemas
@@ -94,31 +95,44 @@ Provides JSON-RPC 2.0 API endpoints:
 
 ```typescript
 import { JsonRpcResource } from "@tokenring-ai/web-host/JsonRpcResource";
-import { createJsonRPCEndpoint } from "@tokenring-ai/web-host/jsonrpc/createJsonRPCEndpoint";
+import { createRPCEndpoint } from "@tokenring-ai/rpc/createRPCEndpoint";
+import { RpcService } from "@tokenring-ai/rpc";
 import { z } from "zod";
 
+// Define RPC endpoint schema
 const calculatorSchema = {
+  name: "Calculator",
   path: "/api/calc",
   methods: {
     add: {
-      type: "query" as const,
+      type: "query",
+      input: z.object({ a: z.number(), b: z.number() }),
+      result: z.object({ result: z.number() })
+    },
+    multiply: {
+      type: "mutation",
       input: z.object({ a: z.number(), b: z.number() }),
       result: z.object({ result: z.number() })
     },
     streamResult: {
-      type: "stream" as const,
+      type: "stream",
       input: z.object({ steps: z.number() }),
       result: z.object({ step: z.number(), value: z.number() })
     }
   }
 };
 
+// Define RPC implementation
 const calculator = {
-  add: async (params: { a: number; b: number }, app: TokenRingApp) => ({
+  add: async (params: { a: number; b: number }, app) => ({
     result: params.a + params.b
   }),
-  
-  streamResult: async function* (params: { steps: number }, app: TokenRingApp, signal: AbortSignal) {
+
+  multiply: async (params: { a: number; b: number }, app) => ({
+    result: params.a * params.b
+  }),
+
+  streamResult: async function* (params: { steps: number }, app, signal: AbortSignal) {
     let value = 0;
     for (let i = 0; i < params.steps; i++) {
       if (signal.aborted) break;
@@ -129,10 +143,22 @@ const calculator = {
   }
 };
 
-const endpoint = createJsonRPCEndpoint(calculatorSchema, calculator);
+// Create and register endpoint
+const endpoint = createRPCEndpoint(calculatorSchema, calculator);
 const rpcResource = new JsonRpcResource(app, endpoint);
 
 webHostService.registerResource("calculator", rpcResource);
+```
+
+#### WsRpcResource
+
+Provides WebSocket-based RPC endpoints for real-time communication:
+
+```typescript
+import { WsRpcResource } from "@tokenring-ai/web-host/WsRpcResource";
+
+// WsRpcResource is automatically created from RPC endpoints
+// by the plugin during startup
 ```
 
 ### Configuration Schema
@@ -140,18 +166,36 @@ webHostService.registerResource("calculator", rpcResource);
 ```typescript
 import { z } from "zod";
 
+const staticResourceConfigSchema = z.object({
+  type: z.literal("static"),
+  root: z.string(),
+  description: z.string(),
+  indexFile: z.string(),
+  notFoundFile: z.string().optional(),
+  prefix: z.string()
+});
+
+const spaResourceConfigSchema = z.object({
+  type: z.literal("spa"),
+  file: z.string(),
+  description: z.string(),
+  prefix: z.string()
+});
+
+const AuthConfigSchema = z.object({
+  users: z.record(z.string(), z.object({
+    password: z.string().optional(),
+    bearerToken: z.string().optional(),
+  }))
+});
+
 const WebHostConfigSchema = z.object({
   host: z.string().default("127.0.0.1"),
   port: z.number().optional(),
-  auth: z.object({
-    users: z.record(z.string(), z.object({
-      password: z.string().optional(),
-      bearerToken: z.string().optional(),
-    }))
-  }).optional(),
+  auth: AuthConfigSchema.optional(),
   resources: z.record(z.string(), z.discriminatedUnion("type", [
     staticResourceConfigSchema,
-    spaResourceConfigSchema
+    spaResourceConfigSchema,
   ])).optional(),
 });
 ```
@@ -193,7 +237,7 @@ const app = new TokenRingApp({
         prefix: "/static"
       },
       "spa": {
-        type: "spa", 
+        type: "spa",
         file: "./dist/index.html",
         description: "Main application",
         prefix: "/"
@@ -233,21 +277,35 @@ server.get("/api/whoami", async (request) => {
 
 ## JSON-RPC Implementation
 
+### RPC Method Types
+
+The RPC system supports three method types:
+
+- **query**: Read-only operations that return a result
+- **mutation**: Operations that modify state and return a result
+- **stream**: Operations that emit a sequence of results
+
 ### Defining RPC Schemas
 
 ```typescript
 import { z } from "zod";
 
 const calculatorSchema = {
+  name: "Calculator",
   path: "/api/calc",
   methods: {
     add: {
-      type: "query" as const,
+      type: "query",
+      input: z.object({ a: z.number(), b: z.number() }),
+      result: z.object({ result: z.number() })
+    },
+    multiply: {
+      type: "mutation",
       input: z.object({ a: z.number(), b: z.number() }),
       result: z.object({ result: z.number() })
     },
     streamResult: {
-      type: "stream" as const,
+      type: "stream",
       input: z.object({ steps: z.number() }),
       result: z.object({ step: z.number(), value: z.number() })
     }
@@ -259,11 +317,18 @@ const calculatorSchema = {
 
 ```typescript
 const calculator = {
-  add: async (params: { a: number; b: number }, app: TokenRingApp) => ({
+  // Query method
+  add: async (params: { a: number; b: number }, app) => ({
     result: params.a + params.b
   }),
-  
-  streamResult: async function* (params: { steps: number }, app: TokenRingApp, signal: AbortSignal) {
+
+  // Mutation method
+  multiply: async (params: { a: number; b: number }, app) => ({
+    result: params.a * params.b
+  }),
+
+  // Stream method
+  streamResult: async function* (params: { steps: number }, app, signal: AbortSignal) {
     let value = 0;
     for (let i = 0; i < params.steps; i++) {
       if (signal.aborted) break;
@@ -275,15 +340,46 @@ const calculator = {
 };
 ```
 
+### Automatic Registration via Plugin
+
+The plugin automatically creates JSON-RPC and WebSocket RPC resources from RPC endpoints registered with the RpcService:
+
+```typescript
+// Register RPC endpoint with RpcService
+const endpoint = createRPCEndpoint(calculatorSchema, calculator);
+rpcService.registerEndpoint("calculator", endpoint);
+
+// The web-host plugin will automatically:
+// 1. Create JsonRpcResource for HTTP JSON-RPC
+// 2. Create WsRpcResource for WebSocket RPC
+```
+
 ### JSON-RPC Client
 
 ```typescript
-import { createJsonRPCClient } from "@tokenring-ai/web-host/jsonrpc/createJsonRPCClient";
+import { createJsonRPCClient } from "@tokenring-ai/web-host/createJsonRPCClient";
 
 const client = createJsonRPCClient(new URL("http://localhost:3000"), calculatorSchema);
 
 // Call query/mutation methods
 const result = await client.add({ a: 5, b: 3 });
+
+// Stream methods return async generators
+for await (const update of client.streamResult({ steps: 5 })) {
+  console.log(update);
+}
+```
+
+### WebSocket RPC Client
+
+```typescript
+import { createWsRPCClient } from "@tokenring-ai/web-host/createWsRPCClient";
+
+const client = createWsRPCClient(new URL("http://localhost:3000"), calculatorSchema);
+
+// Call methods on WebSocket
+const result = await client.add({ a: 5, b: 3 });
+console.log(result);
 
 // Stream methods return async generators
 for await (const update of client.streamResult({ steps: 5 })) {
@@ -368,15 +464,28 @@ const AuthConfigSchema = z.object({
 });
 ```
 
-### JSON-RPC Type Exports
+### WebHostConfig Schema
 
-The package exports the following JSON-RPC types from `jsonrpc/` subdirectory:
+```typescript
+const WebHostConfigSchema = z.object({
+  host: z.string().default("127.0.0.1"),
+  port: z.number().optional(),
+  auth: AuthConfigSchema.optional(),
+  resources: z.record(z.string(), z.discriminatedUnion("type", [
+    staticResourceConfigSchema,
+    spaResourceConfigSchema,
+  ])).optional(),
+});
+```
 
-- `JsonRPCSchema`: Schema definition for RPC endpoints
-- `JsonRPCImplementation`: Implementation type for RPC methods
-- `JsonRpcEndpoint`: Endpoint type returned by `createJsonRPCEndpoint`
+### Type Exports
+
+The package exports the following types:
+
+- `WebResource`: Interface for web resources
 - `ResultOfRPCCall<T, K>`: Type utility for RPC result types
 - `ParamsOfRPCCall<T, K>`: Type utility for RPC parameter types
+- `FunctionTypeOfRPCCall<T, K>`: Type utility for RPC function types
 
 ## Commands
 
@@ -400,6 +509,7 @@ The web-host package works seamlessly with other TokenRing packages:
 
 - **@tokenring-ai/agent**: Provides RPC endpoints for agent management
 - **@tokenring-ai/app**: Service registration and lifecycle management
+- **@tokenring-ai/rpc**: RPC endpoint registration and execution
 - **@tokenring-ai/utility**: Registry and utility functions
 
 ## Examples
@@ -443,15 +553,22 @@ await app.start();
 ### JSON-RPC API Example
 
 ```typescript
-import { createJsonRPCEndpoint } from "@tokenring-ai/web-host/jsonrpc/createJsonRPCEndpoint";
+import { createRPCEndpoint } from "@tokenring-ai/rpc/createRPCEndpoint";
 import { JsonRpcResource } from "@tokenring-ai/web-host/JsonRpcResource";
+import { RpcService } from "@tokenring-ai/rpc";
 import { z } from "zod";
 
 const calculatorSchema = {
+  name: "Calculator",
   path: "/api/calc",
   methods: {
     add: {
       type: "query",
+      input: z.object({ a: z.number(), b: z.number() }),
+      result: z.object({ result: z.number() })
+    },
+    multiply: {
+      type: "mutation",
       input: z.object({ a: z.number(), b: z.number() }),
       result: z.object({ result: z.number() })
     },
@@ -464,11 +581,13 @@ const calculatorSchema = {
 };
 
 const calculator = {
-  add: async (params: { a: number; b: number }, app: TokenRingApp) => ({
+  add: async (params: { a: number; b: number }, app) => ({
     result: params.a + params.b
   }),
-  
-  streamResult: async function* (params: { steps: number }, app: TokenRingApp, signal: AbortSignal) {
+  multiply: async (params: { a: number; b: number }, app) => ({
+    result: params.a * params.b
+  }),
+  streamResult: async function* (params: { steps: number }, app, signal: AbortSignal) {
     let value = 0;
     for (let i = 0; i < params.steps; i++) {
       if (signal.aborted) break;
@@ -479,10 +598,11 @@ const calculator = {
   }
 };
 
-const endpoint = createJsonRPCEndpoint(calculatorSchema, calculator);
-const rpcResource = new JsonRpcResource(app, endpoint);
+// Register RPC endpoint
+const endpoint = createRPCEndpoint(calculatorSchema, calculator);
+rpcService.registerEndpoint("calculator", endpoint);
 
-webHostService.registerResource("calculator", rpcResource);
+// The web-host plugin will automatically create resources
 ```
 
 ### Plugin Configuration Example
