@@ -11,7 +11,8 @@
     "fastify": "^5.7.2",
     "@fastify/websocket": "^11.2.0",
     "@fastify/static": "^9.0.0",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "ws": "^8.19.0"
   },
   "exports": {
     ".": "./index.ts",
@@ -22,7 +23,8 @@
   "type": "module",
   "devDependencies": {
     "vitest": "^4.0.18",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "@types/ws": "^8.18.1"
   },
   "scripts": {
     "test": "vitest run",
