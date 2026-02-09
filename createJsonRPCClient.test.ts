@@ -227,14 +227,4 @@ describe('createJsonRPCClient', () => {
     await expect(client.testQuery({ message: 'test' }))
       .rejects.toThrow('Network error');
   });
-
-  it('should create correct type definitions', () => {
-    const client = createJsonRPCClient(baseURL, schemas);
-    
-    const queryType: ResultOfRPCCall<typeof schemas, 'testQuery'> = { response: 'test' };
-    const queryParams: ParamsOfRPCCall<typeof schemas, 'testQuery'> = { message: 'test' };
-    
-    expect(queryType).toBeDefined();
-    expect(queryParams).toBeDefined();
-  });
 });

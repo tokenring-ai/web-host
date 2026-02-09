@@ -5,14 +5,13 @@ import {TokenRingService} from "@tokenring-ai/app/types";
 import waitForAbort from "@tokenring-ai/utility/promise/waitForAbort";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import Fastify, {FastifyInstance} from "fastify";
-import {z} from "zod";
 import {registerAuth} from "./auth.ts";
 
-import {type ParsedWebHostConfig, WebHostConfigSchema} from "./schema.ts";
+import {type ParsedWebHostConfig} from "./schema.ts";
 import type {WebResource} from "./types.js";
 
 export default class WebHostService implements TokenRingService {
-  name = "WebHostService";
+  readonly name = "WebHostService";
   description = "Fastify web host for serving resources and APIs";
 
   private server!: FastifyInstance;
@@ -35,7 +34,6 @@ export default class WebHostService implements TokenRingService {
       await resource.register(this.server);
     }
 
-    //console.log(this.server.printRoutes());
     await this.server.listen({port: this.config.port, host: this.config.host});
 
     this.app.serviceOutput(`WebHost listening at ${this.getURL()}`);
