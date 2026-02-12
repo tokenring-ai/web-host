@@ -1,12 +1,5 @@
 import {z} from "zod";
-import type {RPCSchema} from "@tokenring-ai/rpc/types";
-
-export type ResultOfRPCCall<T extends RPCSchema, K extends keyof T["methods"]> = z.infer<T["methods"][K]["result"]>;
-export type ParamsOfRPCCall<T extends RPCSchema, K extends keyof T["methods"]> = z.infer<T["methods"][K]["input"]>;
-export type FunctionTypeOfRPCCall<T extends RPCSchema, K extends keyof T["methods"]> = T["methods"][K]["type"] extends "stream"
-  ? (params: ParamsOfRPCCall<T, K>, signal: AbortSignal) => AsyncGenerator<ResultOfRPCCall<T, K>>
-  : (params: ParamsOfRPCCall<T, K>) => Promise<ResultOfRPCCall<T, K>>;
-
+import type {FunctionTypeOfRPCCall, ResultOfRPCCall, RPCSchema} from "@tokenring-ai/rpc/types";
 
 let rpcId = 0;
 
