@@ -18,7 +18,7 @@ export default class WebHostService implements TokenRingService {
 
   resources = new KeyedRegistry<WebResource>();
   registerResource = this.resources.register;
-  getResources = this.resources.getAllItems;
+  getResourceEntries = this.resources.entries;
 
   constructor(private app: TokenRingApp, private config: ParsedWebHostConfig) {}
 
