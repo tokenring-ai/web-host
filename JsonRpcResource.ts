@@ -17,29 +17,33 @@ export default class JsonRpcResource implements WebResource {
 
   async register(server: FastifyInstance): Promise<void> {
     server.post(this.jsonRpcEndpoint.path, async (request, reply) => {
-      const {jsonrpc, id, method, params = []} = jsonBodySchema.parse(request.body);
-
-      if (jsonrpc !== "2.0") {
-        return reply.send({jsonrpc: "2.0", id, error: {code: -32600, message: "Invalid Request"}});
-      }
-
-      const handler = pickValue(this.jsonRpcEndpoint.methods, method)
-      if (!handler) {
-        return reply.send({jsonrpc: "2.0", id, error: {code: -32601, message: "Method not found"}});
-      }
-
       try {
-        const validatedParams = handler.inputSchema.parse(params);
+        const {jsonrpc, id, method, params = []} = jsonBodySchema.parse(request.body);
 
-        if (handler.type === "stream") {
-          return this.handleStream(id, handler, validatedParams, reply);
+        if (jsonrpc !== "2.0") {
+          return reply.send({jsonrpc: "2.0", id, error: {code: -32600, message: "Invalid Request"}});
         }
-        const result = (handler as RpcMethod<any, any, "query" | "mutation">).execute(validatedParams, this.app);
 
-        const validatedResult = handler.resultSchema.parse(await result);
-        return reply.send({jsonrpc: "2.0", id, result: validatedResult});
+        const handler = pickValue(this.jsonRpcEndpoint.methods, method)
+        if (!handler) {
+          return reply.send({jsonrpc: "2.0", id, error: {code: -32601, message: "Method not found"}});
+        }
+
+        try {
+          const validatedParams = handler.inputSchema.parse(params);
+
+          if (handler.type === "stream") {
+            return this.handleStream(id, handler, validatedParams, reply);
+          }
+          const result = (handler as RpcMethod<any, any, "query" | "mutation">).execute(validatedParams, this.app);
+
+          const validatedResult = handler.resultSchema.parse(await result);
+          return reply.send({jsonrpc: "2.0", id, result: validatedResult});
+        } catch (error: any) {
+          return reply.send({jsonrpc: "2.0", id, error: {code: -32603, message: error.message}});
+        }
       } catch (error: any) {
-        return reply.send({jsonrpc: "2.0", id, error: {code: -32603, message: error.message}});
+        return reply.send({jsonrpc: "2.0", id: null, error: {code: -32700, message: error.message}});
       }
     });
   }
