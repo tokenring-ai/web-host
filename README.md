@@ -43,7 +43,7 @@ const app = new TokenRingApp({
 });
 
 // Install the package
-await app.addPackages([webHostPackage]);
+await app.addPlugin(webHostPackage);
 
 // Start the application
 await app.start();
@@ -94,7 +94,7 @@ webHostService.registerResource("spa", spaResource);
 Provides JSON-RPC 2.0 API endpoints:
 
 ```typescript
-import { JsonRpcResource } from "@tokenring-ai/web-host/JsonRpcResource";
+import { JsonRpcResource } from "@tokenring-ai/web-host";
 import { createRPCEndpoint } from "@tokenring-ai/rpc/createRPCEndpoint";
 import { RpcService } from "@tokenring-ai/rpc";
 import { z } from "zod";
@@ -155,7 +155,7 @@ webHostService.registerResource("calculator", rpcResource);
 Provides WebSocket-based RPC endpoints for real-time communication:
 
 ```typescript
-import { WsRpcResource } from "@tokenring-ai/web-host/WsRpcResource";
+import { WsRpcResource } from "@tokenring-ai/web-host";
 
 // WsRpcResource is automatically created from RPC endpoints
 // by the plugin during startup
@@ -165,39 +165,11 @@ import { WsRpcResource } from "@tokenring-ai/web-host/WsRpcResource";
 
 ```typescript
 import { z } from "zod";
+import { AuthConfigSchema, WebHostConfigSchema } from "@tokenring-ai/web-host";
 
-const staticResourceConfigSchema = z.object({
-  type: z.literal("static"),
-  root: z.string(),
-  description: z.string(),
-  indexFile: z.string(),
-  notFoundFile: z.string().optional(),
-  prefix: z.string()
-});
-
-const spaResourceConfigSchema = z.object({
-  type: z.literal("spa"),
-  file: z.string(),
-  description: z.string(),
-  prefix: z.string()
-});
-
-const AuthConfigSchema = z.object({
-  users: z.record(z.string(), z.object({
-    password: z.string().optional(),
-    bearerToken: z.string().optional(),
-  }))
-});
-
-const WebHostConfigSchema = z.object({
-  host: z.string().default("127.0.0.1"),
-  port: z.number().optional(),
-  auth: AuthConfigSchema.optional(),
-  resources: z.record(z.string(), z.discriminatedUnion("type", [
-    staticResourceConfigSchema,
-    spaResourceConfigSchema,
-  ])).optional(),
-});
+// Schema types are also available
+type AuthConfig = z.output<typeof AuthConfigSchema>;
+type WebHostConfig = z.output<typeof WebHostConfigSchema>;
 ```
 
 **Configuration Options:**
@@ -358,6 +330,29 @@ rpcService.registerEndpoint("calculator", endpoint);
 
 ```typescript
 import { createJsonRPCClient } from "@tokenring-ai/web-host/createJsonRPCClient";
+import type { RPCSchema } from "@tokenring-ai/rpc/types";
+
+const calculatorSchema: RPCSchema = {
+  name: "Calculator",
+  path: "/api/calc",
+  methods: {
+    add: {
+      type: "query",
+      input: z.object({ a: z.number(), b: z.number() }),
+      result: z.object({ result: z.number() })
+    },
+    multiply: {
+      type: "mutation",
+      input: z.object({ a: z.number(), b: z.number() }),
+      result: z.object({ result: z.number() })
+    },
+    streamResult: {
+      type: "stream",
+      input: z.object({ steps: z.number() }),
+      result: z.object({ step: z.number(), value: z.number() })
+    }
+  }
+};
 
 const client = createJsonRPCClient(new URL("http://localhost:3000"), calculatorSchema);
 
@@ -365,7 +360,7 @@ const client = createJsonRPCClient(new URL("http://localhost:3000"), calculatorS
 const result = await client.add({ a: 5, b: 3 });
 
 // Stream methods return async generators
-for await (const update of client.streamResult({ steps: 5 })) {
+for await (const update of client.streamResult({ steps: 5 }, signal)) {
   console.log(update);
 }
 ```
@@ -374,15 +369,38 @@ for await (const update of client.streamResult({ steps: 5 })) {
 
 ```typescript
 import { createWsRPCClient } from "@tokenring-ai/web-host/createWsRPCClient";
+import type { RPCSchema } from "@tokenring-ai/rpc/types";
 
-const client = createWsRPCClient(new URL("http://localhost:3000"), calculatorSchema);
+const calculatorSchema: RPCSchema = {
+  name: "Calculator",
+  path: "/api/calc",
+  methods: {
+    add: {
+      type: "query",
+      input: z.object({ a: z.number(), b: z.number() }),
+      result: z.object({ result: z.number() })
+    },
+    multiply: {
+      type: "mutation",
+      input: z.object({ a: z.number(), b: z.number() }),
+      result: z.object({ result: z.number() })
+    },
+    streamResult: {
+      type: "stream",
+      input: z.object({ steps: z.number() }),
+      result: z.object({ step: z.number(), value: z.number() })
+    }
+  }
+};
+
+const wsClient = createWsRPCClient(new URL("http://localhost:3000"), calculatorSchema);
 
 // Call methods on WebSocket
-const result = await client.add({ a: 5, b: 3 });
+const result = await wsClient.add({ a: 5, b: 3 });
 console.log(result);
 
 // Stream methods return async generators
-for await (const update of client.streamResult({ steps: 5 })) {
+for await (const update of wsClient.streamResult({ steps: 5 }, signal)) {
   console.log(update);
 }
 ```
@@ -398,9 +416,10 @@ class WebHostService implements TokenRingService {
   
   resources: KeyedRegistry<WebResource>;
   registerResource: (name: string, resource: WebResource) => void;
+  getResourceEntries: () => Iterable<[string, WebResource]>;
   getResources: () => WebResource[];
   
-  constructor(app: TokenRingApp, config: WebHostConfig);
+  constructor(app: TokenRingApp, config: ParsedWebHostConfig);
   
   getURL(): URL;
   
@@ -411,7 +430,8 @@ class WebHostService implements TokenRingService {
 **Methods:**
 
 - `registerResource(name, resource)`: Register a new web resource
-- `getResources()`: Get all registered resources
+- `getResourceEntries()`: Get all registered resources as key-value pairs
+- `getResources()`: Get all registered resources as an array
 - `getURL()`: Get the current server URL
 - `run(signal)`: Start the server (usually called automatically)
 
@@ -483,9 +503,8 @@ const WebHostConfigSchema = z.object({
 The package exports the following types:
 
 - `WebResource`: Interface for web resources
-- `ResultOfRPCCall<T, K>`: Type utility for RPC result types
-- `ParamsOfRPCCall<T, K>`: Type utility for RPC parameter types
-- `FunctionTypeOfRPCCall<T, K>`: Type utility for RPC function types
+- `ParsedAuthConfig`: Type for parsed authentication configuration
+- `ParsedWebHostConfig`: Type for parsed web host configuration
 
 ## Commands
 
@@ -535,7 +554,7 @@ const app = new TokenRingApp({
   }
 });
 
-await app.addPackages([webHostPackage]);
+await app.addPlugin(webHostPackage);
 
 // Add custom resource
 const webHostService = app.getService(WebHostService);
@@ -554,7 +573,7 @@ await app.start();
 
 ```typescript
 import { createRPCEndpoint } from "@tokenring-ai/rpc/createRPCEndpoint";
-import { JsonRpcResource } from "@tokenring-ai/web-host/JsonRpcResource";
+import { JsonRpcResource } from "@tokenring-ai/web-host";
 import { RpcService } from "@tokenring-ai/rpc";
 import { z } from "zod";
 
@@ -633,8 +652,44 @@ const app = new TokenRingApp({
   }
 });
 
-await app.addPackages([webHostPackage]);
+await app.addPlugin(webHostPackage);
 await app.start();
+```
+
+## Dependencies
+
+### Production Dependencies
+
+- `@tokenring-ai/app` (0.2.0) - Base application framework with service management and plugin architecture
+- `@tokenring-ai/agent` (0.2.0) - Agent system with state management
+- `@tokenring-ai/chat` (0.2.0) - Chat service for human interaction
+- `@tokenring-ai/utility` (0.2.0) - Shared utilities and helpers
+- `@tokenring-ai/rpc` (0.2.0) - RPC endpoint registration and execution
+- `fastify` (^5.7.4) - High-performance web server
+- `@fastify/websocket` (^11.2.0) - WebSocket support for Fastify
+- `@fastify/static` (^9.0.0) - Static file serving for Fastify
+- `zod` (^4.3.6) - Schema validation
+- `ws` (^8.19.0) - WebSocket implementation
+
+### Development Dependencies
+
+- `vitest` (^4.0.18) - Testing framework
+- `typescript` (^5.9.3) - TypeScript compiler
+- `@types/ws` (^8.18.1) - WebSocket type definitions
+
+## Testing
+
+The package includes comprehensive unit and integration tests:
+
+```bash
+# Run all tests
+bun test
+
+# Run tests in watch mode
+bun test --watch
+
+# Run tests with coverage
+bun test --coverage
 ```
 
 ## License
