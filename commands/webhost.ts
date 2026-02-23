@@ -25,12 +25,11 @@ Displays the current web host URL and lists all registered resources.
 #   - trpcBackend
 #   - defaultFrontend`;
 
-function execute(_remainder: string, agent: Agent): void {
+async function execute(_remainder: string, agent: Agent): Promise<string> {
   const webHost = agent.getServiceByType(WebHostService);
   
   if (!webHost) {
-    agent.errorMessage("WebHostService is not running");
-    return;
+    return "WebHostService is not running";
   }
 
   const resources = webHost.resources.getAllItemNames();
@@ -44,7 +43,7 @@ function execute(_remainder: string, agent: Agent): void {
     lines.push("No resources registered");
   }
 
-  agent.infoMessage(lines.join("\n"));
+  return lines.join("\n");
 }
 
 export default {
