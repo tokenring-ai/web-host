@@ -48,7 +48,7 @@ export default {
 
     if (rpcService) {
       for (const endpoint of rpcService.getAllEndpoints()) {
-        app.serviceOutput(`Registering JSON-RPC endpoint: ${endpoint.path}`);
+        app.serviceOutput(webHostService,`Registering JSON-RPC endpoint: ${endpoint.path}`);
         webHostService.registerResource(endpoint.name, new JsonRpcResource(app, endpoint));
         webHostService.registerResource(`${endpoint.name} (WS)`, new WsRpcResource(app, endpoint));
       }
