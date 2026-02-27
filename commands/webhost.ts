@@ -47,6 +47,7 @@ async function execute(_remainder: string, agent: Agent): Promise<string> {
 }
 
 export default {
+  name: "webhost",
   description,
   execute,
   help,

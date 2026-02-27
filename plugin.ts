@@ -26,7 +26,7 @@ export default {
       app.addServices(webHostService);
 
       app.waitForService(AgentCommandService, service => {
-        service.addAgentCommands({webhost});
+        service.addAgentCommands(webhost);
       });
 
       for (const resourceName in config.webHost.resources) {
