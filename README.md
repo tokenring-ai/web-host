@@ -417,13 +417,13 @@ class WebHostService implements TokenRingService {
   resources: KeyedRegistry<WebResource>;
   registerResource: (name: string, resource: WebResource) => void;
   getResourceEntries: () => Iterable<[string, WebResource]>;
-  getResources: () => WebResource[];
   
   constructor(app: TokenRingApp, config: ParsedWebHostConfig);
   
   getURL(): URL;
   
-  async run(signal: AbortSignal): Promise<void>;
+  async start(signal: AbortSignal): Promise<void>;
+  async stop(): Promise<void>;
 }
 ```
 
@@ -431,9 +431,15 @@ class WebHostService implements TokenRingService {
 
 - `registerResource(name, resource)`: Register a new web resource
 - `getResourceEntries()`: Get all registered resources as key-value pairs
-- `getResources()`: Get all registered resources as an array
 - `getURL()`: Get the current server URL
-- `run(signal)`: Start the server (usually called automatically)
+- `start(signal)`: Start the server (usually called automatically)
+- `stop()`: Stop the server
+
+**Properties:**
+
+- `resources`: KeyedRegistry containing all registered WebResources
+- `name`: Service name ("WebHostService")
+- `description`: Service description
 
 ### WebResource Interface
 
@@ -679,17 +685,17 @@ await app.start();
 
 ## Testing
 
-The package includes comprehensive unit and integration tests:
+The package includes comprehensive unit and integration tests using Vitest:
 
 ```bash
 # Run all tests
 bun test
 
 # Run tests in watch mode
-bun test --watch
+bun test:watch
 
 # Run tests with coverage
-bun test --coverage
+bun test:coverage
 ```
 
 ## License
