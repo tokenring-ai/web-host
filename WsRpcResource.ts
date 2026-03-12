@@ -14,11 +14,28 @@ const jsonBodySchema = z.object({
 });
 
 export default class WsRpcResource implements WebResource {
+  private readonly activeSockets: Set<WebSocket> = new Set();
   constructor(private app: TokenRingApp, private jsonRpcEndpoint: RpcEndpoint) {
   }
 
   async register(server: FastifyInstance): Promise<void> {
+    server.addHook("preClose", (done) => {
+      for (const socket of this.activeSockets) {
+        socket.close();
+      }
+      this.activeSockets.clear();
+      done();
+    });
+
     server.get(this.jsonRpcEndpoint.path, {websocket: true}, (socket: WebSocket, req) => {
+      const abortController = new AbortController();
+      this.activeSockets.add(socket);
+
+      socket.once('close', () => {
+        abortController.abort();
+        this.activeSockets.delete(socket)
+      });
+
       socket.on('message', async (message: any) => {
         try {
           const data = JSON.parse(message.toString());
@@ -38,10 +55,6 @@ export default class WsRpcResource implements WebResource {
           const validatedParams = handler.inputSchema.parse(params);
 
           if (handler.type === "stream") {
-            const abortController = new AbortController();
-            const cleanup = () => abortController.abort();
-            socket.on('close', cleanup);
-
             try {
               const result = handler.execute(validatedParams, this.app, abortController.signal) as AsyncGenerator<any>;
               for await (const event of result) {
@@ -49,10 +62,8 @@ export default class WsRpcResource implements WebResource {
               }
               socket.send(JSON.stringify({jsonrpc: "2.0", id, result: null, stream: "end"}));
             } catch (error: any) {
-              abortController.abort();
+              socket.close()
               socket.send(JSON.stringify({jsonrpc: "2.0", id, error: {code: -32603, message: error.message}}));
-            } finally {
-              socket.off('close', cleanup);
             }
             return;
           }

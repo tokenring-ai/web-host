@@ -2,9 +2,8 @@ import fastifyWebsocket from "@fastify/websocket";
 import TokenRingApp from "@tokenring-ai/app";
 
 import {TokenRingService} from "@tokenring-ai/app/types";
-import waitForAbort from "@tokenring-ai/utility/promise/waitForAbort";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
-import Fastify, {FastifyInstance} from "fastify";
+import Fastify from "fastify";
 import {registerAuth} from "./auth.ts";
 
 import {type ParsedWebHostConfig} from "./schema.ts";
@@ -41,7 +40,8 @@ export default class WebHostService implements TokenRingService {
   }
 
   async stop() {
-    await this.server.close()
+    //TODO: waiting for the server to close hangs the app, so we just abandon it for now
+    //await this.server.close()
   }
 
   getURL(): URL {
