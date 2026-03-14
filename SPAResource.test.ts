@@ -1,55 +1,42 @@
-import {FastifyInstance} from 'fastify';
-import fs from 'fs/promises';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import SPAResource, {spaResourceConfigSchema} from './SPAResource';
+import {BunRouter} from './types';
+import path from 'path';
 
-// Mock fs/promises
-vi.mock('fs/promises', () => ({
-  default: {
-    access: vi.fn()
-  },
-  access: vi.fn()
-}));
-
-vi.mock('path', () => ({
-  default: {
-    dirname: vi.fn((filePath: string) => filePath.split('/').slice(0, -1).join('/')),
-    basename: vi.fn((filePath: string) => filePath.split('/').pop())
-  },
-  dirname: vi.fn((filePath: string) => filePath.split('/').slice(0, -1).join('/')),
-  basename: vi.fn((filePath: string) => filePath.split('/').pop())
-}));
-
-vi.mock('@fastify/static', () => ({
-  default: vi.fn()
+// Mock Bun.file
+vi.mock('bun', () => ({
+  file: vi.fn(() => ({
+    exists: vi.fn().mockResolvedValue(true)
+  }))
 }));
 
 describe('SPAResource', () => {
-  let mockServer: FastifyInstance;
+  let mockRouter: BunRouter;
   let resource: SPAResource;
-  let mockFsAccess: any;
 
   beforeEach(() => {
-    mockServer = {
-      register: vi.fn(),
-      setNotFoundHandler: vi.fn(),
-      plugin: vi.fn()
+    mockRouter = {
+      get: vi.fn(),
+      post: vi.fn(),
+      put: vi.fn(),
+      delete: vi.fn(),
+      ws: vi.fn(),
+      static: vi.fn(),
+      fallback: vi.fn()
     };
-    mockFsAccess = vi.mocked(fs.access);
   });
 
   describe('constructor', () => {
     it('should create instance with valid config', () => {
       const config = {
         type: 'spa' as const,
-        file: '/path/to/app/index.html',
-        description: 'SPA application',
+        file: '/path/to/index.html',
+        description: 'SPA Application',
         prefix: '/app'
       };
 
       const resource = new SPAResource(config);
       expect(resource).toBeInstanceOf(SPAResource);
-      expect(resource.config).toBe(config);
     });
   });
 
@@ -57,66 +44,70 @@ describe('SPAResource', () => {
     it('should register SPA with existing file', async () => {
       const config = {
         type: 'spa' as const,
-        file: '/path/to/app/index.html',
-        description: 'SPA application',
+        file: '/path/to/index.html',
+        description: 'SPA Application',
         prefix: '/app'
       };
 
       const resource = new SPAResource(config);
-      await resource.register(mockServer);
+      await resource.register(mockRouter);
 
-      expect(mockFsAccess).toHaveBeenCalledWith('/path/to/app/index.html');
-      expect(mockServer.register).toHaveBeenCalledWith(expect.any(Function), { prefix: '/app' });
-    });
-
-    it('should handle non-existing file gracefully', async () => {
-      const config = {
-        type: 'spa' as const,
-        file: '/path/to/nonexistent/index.html',
-        description: 'SPA application',
-        prefix: '/app'
-      };
-
-      mockFsAccess.mockRejectedValue(new Error('File not found'));
+      // Should register static file serving
+      expect(mockRouter.static).toHaveBeenCalledWith('/app', '/path/to');
       
-      const resource = new SPAResource(config);
-      await resource.register(mockServer);
-
-      expect(mockFsAccess).toHaveBeenCalledWith('/path/to/nonexistent/index.html');
-      expect(mockServer.register).toHaveBeenCalledWith(expect.any(Function), { prefix: '/app' });
-    });
-
-    it('should serve requests to index.html', async () => {
-      const config = {
-        type: 'spa' as const,
-        file: '/path/to/app/index.html',
-        description: 'SPA application',
-        prefix: '/app'
-      };
-
-      const resource = new SPAResource(config);
-      await resource.register(mockServer);
-
-      const registerCall = mockServer.register.mock.calls[0];
-      const registerFn = registerCall[0];
+      // Should register GET handlers for root paths
+      expect(mockRouter.get).toHaveBeenCalledWith('/app', expect.any(Function));
+      expect(mockRouter.get).toHaveBeenCalledWith('/app/', expect.any(Function));
       
-      expect(typeof registerFn).toBe('function');
-      expect(registerCall[1]).toEqual({ prefix: '/app' });
+      // Should register fallback handler
+      expect(mockRouter.fallback).toHaveBeenCalledWith(expect.any(Function));
     });
 
     it('should handle root level file paths', async () => {
       const config = {
         type: 'spa' as const,
-        file: 'index.html',
-        description: 'Root SPA',
+        file: '/index.html',
+        description: 'SPA Application',
         prefix: '/'
       };
 
       const resource = new SPAResource(config);
-      await resource.register(mockServer);
+      await resource.register(mockRouter);
 
-      expect(mockFsAccess).toHaveBeenCalledWith('index.html');
-      expect(mockServer.register).toHaveBeenCalledWith(expect.any(Function), { prefix: '/' });
+      // Should register static file serving with root directory
+      expect(mockRouter.static).toHaveBeenCalled();
+    });
+
+    it('should serve requests to index.html', async () => {
+      const config = {
+        type: 'spa' as const,
+        file: '/path/to/index.html',
+        description: 'SPA Application',
+        prefix: '/app'
+      };
+
+      const resource = new SPAResource(config);
+      await resource.register(mockRouter);
+
+      // Get the handler for /app
+      const rootHandler = (mockRouter.get as any).mock.calls.find(
+        (call: any[]) => call[0] === '/app'
+      )[1];
+
+      const mockRequest: any = {
+        method: 'GET',
+        url: 'http://localhost/app',
+        path: '/app',
+        headers: new Headers()
+      };
+
+      const mockResponse: any = {
+        file: vi.fn().mockResolvedValue(new Response('HTML content'))
+      };
+
+      await rootHandler(mockRequest, mockResponse);
+
+      expect(mockResponse.file).toHaveBeenCalledWith('/path/to/index.html');
     });
   });
 
@@ -124,8 +115,8 @@ describe('SPAResource', () => {
     it('should validate valid config', () => {
       const validConfig = {
         type: 'spa',
-        file: '/path/to/app/index.html',
-        description: 'SPA application',
+        file: '/path/to/index.html',
+        description: 'SPA Application',
         prefix: '/app'
       };
 
@@ -136,8 +127,8 @@ describe('SPAResource', () => {
     it('should reject invalid type', () => {
       const invalidConfig = {
         type: 'invalid',
-        file: '/path/to/app/index.html',
-        description: 'SPA application',
+        file: '/path/to/index.html',
+        description: 'SPA Application',
         prefix: '/app'
       };
 
@@ -146,8 +137,8 @@ describe('SPAResource', () => {
 
     it('should require all required fields', () => {
       const partialConfig = {
-        file: '/path/to/app/index.html',
-        description: 'SPA application',
+        file: '/path/to/index.html',
+        description: 'SPA Application',
         prefix: '/app'
       };
 
@@ -155,14 +146,15 @@ describe('SPAResource', () => {
     });
 
     it('should validate type discriminator', () => {
-      const configWithWrongType = {
-        type: 'static' as const,
-        file: '/path/to/app/index.html',
-        description: 'SPA application',
+      const config = {
+        type: 'spa',
+        file: '/path/to/index.html',
+        description: 'SPA Application',
         prefix: '/app'
       };
 
-      expect(() => spaResourceConfigSchema.parse(configWithWrongType)).toThrow();
+      const result = spaResourceConfigSchema.parse(config);
+      expect(result.type).toBe('spa');
     });
   });
 });

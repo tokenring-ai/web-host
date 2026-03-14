@@ -1,20 +1,20 @@
-import {FastifyInstance} from 'fastify';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import StaticResource, {staticResourceConfigSchema} from './StaticResource';
-
-// Mock fastify-static
-vi.mock('@fastify/static', () => ({
-  default: vi.fn()
-}));
+import {BunRouter} from './types';
 
 describe('StaticResource', () => {
-  let mockServer: FastifyInstance;
+  let mockRouter: BunRouter;
   let resource: StaticResource;
 
   beforeEach(() => {
-    mockServer = {
-      register: vi.fn(),
-      setNotFoundHandler: vi.fn()
+    mockRouter = {
+      get: vi.fn(),
+      post: vi.fn(),
+      put: vi.fn(),
+      delete: vi.fn(),
+      ws: vi.fn(),
+      static: vi.fn(),
+      fallback: vi.fn()
     };
   });
 
@@ -46,35 +46,19 @@ describe('StaticResource', () => {
       };
 
       const resource = new StaticResource(config);
-      await resource.register(mockServer);
+      await resource.register(mockRouter);
 
-      expect(mockServer.register).toHaveBeenCalledWith(
-        expect.any(Function),
-        expect.objectContaining({
-          root: '/path/to/static',
-          prefix: '/static',
-          index: 'index.html'
-        })
+      expect(mockRouter.static).toHaveBeenCalledWith(
+        '/static',
+        '/path/to/static',
+        {
+          index: 'index.html',
+          notFound: '404.html'
+        }
       );
     });
 
-    it('should set not found handler when notFoundFile is provided', async () => {
-      const config = {
-        type: 'static' as const,
-        root: '/path/to/static',
-        description: 'Static files',
-        indexFile: 'index.html',
-        notFoundFile: '404.html',
-        prefix: '/static'
-      };
-
-      const resource = new StaticResource(config);
-      await resource.register(mockServer);
-
-      expect(mockServer.setNotFoundHandler).toHaveBeenCalledWith(expect.any(Function));
-    });
-
-    it('should not set not found handler when notFoundFile is not provided', async () => {
+    it('should register without not found handler when notFoundFile is not provided', async () => {
       const config = {
         type: 'static' as const,
         root: '/path/to/static',
@@ -84,9 +68,16 @@ describe('StaticResource', () => {
       };
 
       const resource = new StaticResource(config);
-      await resource.register(mockServer);
+      await resource.register(mockRouter);
 
-      expect(mockServer.setNotFoundHandler).not.toHaveBeenCalled();
+      expect(mockRouter.static).toHaveBeenCalledWith(
+        '/static',
+        '/path/to/static',
+        {
+          index: 'index.html',
+          notFound: undefined
+        }
+      );
     });
   });
 

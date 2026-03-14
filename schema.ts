@@ -12,7 +12,7 @@ export type ParsedAuthConfig = z.output<typeof AuthConfigSchema>;
 
 export const WebHostConfigSchema = z.object({
   host: z.string().default("127.0.0.1"),
-  port: z.number().optional(),
+  port: z.number().default(0),
   auth: AuthConfigSchema.optional(),
   resources: z.record(z.string(), z.discriminatedUnion("type", [
     staticResourceConfigSchema,

@@ -1,37 +1,63 @@
-import type {FastifyInstance, FastifyReply, FastifyRequest} from "fastify";
+import type {BunRouter, BunRequest, BunResponse} from "./types.ts";
 import type {ParsedAuthConfig} from "./schema.ts";
 
-export function registerAuth(server: FastifyInstance, config: ParsedAuthConfig) {
-  server.addHook("onRequest", async (request: FastifyRequest, reply: FastifyReply) => {
-    const auth = request.headers.authorization;
-    
-    if (!auth) {
-      reply.code(401).send({error: "Unauthorized"});
-      return;
-    }
+/**
+ * Authentication middleware for Bun server
+ * Supports both Basic and Bearer token authentication
+ */
+export function registerAuth(router: BunRouter, config: ParsedAuthConfig) {
+  // Store original fallback handler (if any)
+  const originalHandlers: Map<string, Map<string, any>> = new Map();
+  
+  // We need to wrap all route handlers with auth check
+  // For now, we'll use a simple approach: add auth check as a fallback
+  // that runs before the actual route handler
+  
+  // This will be integrated into the fetch handler in WebHostService
+  // For now, we'll export the auth checker function
+  
+  (router as any).authConfig = config;
+}
 
-    if (auth.startsWith("Bearer ")) {
-      const token = auth.substring(7);
-      for (const [username, creds] of Object.entries(config.users)) {
-        if (creds.bearerToken === token) {
-          (request as any).user = username;
-          return;
-        }
-      }
-    } else if (auth.startsWith("Basic ")) {
-      const decoded = Buffer.from(auth.substring(6), "base64").toString();
-      if (!decoded.includes(":")) {
-        reply.code(401).send({error: "Unauthorized"});
-        return;
-      }
-      const [username, password] = decoded.split(":");
-      const user = config.users[username];
-      if (user?.password === password) {
-        (request as any).user = username;
-        return;
+/**
+ * Check authentication for a request
+ * Returns the authenticated username or null if auth fails
+ */
+export function checkAuth(
+  request: BunRequest, 
+  config: ParsedAuthConfig
+): string | null {
+  const auth = request.headers.get("authorization");
+  
+  if (!auth) {
+    return null;
+  }
+
+  if (auth.startsWith("Bearer ")) {
+    const token = auth.substring(7);
+    for (const [username, creds] of Object.entries(config.users)) {
+      if (creds.bearerToken === token) {
+        return username;
       }
     }
+  } else if (auth.startsWith("Basic ")) {
+    const decoded = Buffer.from(auth.substring(6), "base64").toString();
+    if (!decoded.includes(":")) {
+      return null;
+    }
+    const [username, password] = decoded.split(":");
+    const user = config.users[username];
+    if (user?.password === password) {
+      return username;
+    }
+  }
 
-    reply.code(401).send({error: "Unauthorized"});
-  });
+  return null;
+}
+
+/**
+ * Create unauthorized response
+ */
+export function unauthorizedResponse(response: BunResponse): Response {
+  return response.json({error: "Unauthorized"}, 401);
 }

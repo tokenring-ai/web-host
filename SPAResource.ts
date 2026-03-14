@@ -1,9 +1,6 @@
-import fastifyStatic from "@fastify/static";
-import type {WebResource} from "@tokenring-ai/web-host/types";
-import type {FastifyInstance} from "fastify";
-import fs from 'fs/promises';
-import path from 'path';
+import type {WebResource, BunRouter, BunRequest, BunResponse} from "./types.ts";
 import {z} from "zod";
+import path from 'path';
 
 export const spaResourceConfigSchema = z.object({
   type: z.literal("spa"),
@@ -15,58 +12,53 @@ export const spaResourceConfigSchema = z.object({
 export default class SPAResource implements WebResource {
   constructor(public config: z.output<typeof spaResourceConfigSchema>) {}
 
-  async register(server: FastifyInstance): Promise<void> {
-    try {
-      await fs.access(this.config.file);
-    } catch (error) {
-      console.log(`SPA file does not exist: ${this.config.file}`);
-    }
-
+  async register(router: BunRouter): Promise<void> {
     const root = path.dirname(this.config.file);
     const fileName = path.basename(this.config.file);
 
-    await server.register((childContext, _, done) => {
-      // Register static file serving for the SPA directory
-      // Static files (JS, CSS, images) will be served by this middleware
-      childContext.register(fastifyStatic, {
-        root,
-        index: false, // Don't automatically serve index.html
-      });
+    // Register static file serving for the SPA directory
+    router.static(this.config.prefix, root);
 
-      // Handle the root path (both with and without trailing slash)
-      // This serves index.html when navigating to /app or /app/
-      childContext.get('/', async (request, reply) => {
-        return reply.sendFile(fileName, root );
-      });
+    // Handle the root path (both with and without trailing slash)
+    router.get(this.config.prefix, async (request: BunRequest, response: BunResponse) => {
+      return await response.file(this.config.file);
+    });
 
-      // Set not-found handler to serve index.html for all SPA routes
-      // This handles client-side routing like /app/dashboard, /app/users/123, etc.
-      // Static files are already handled by fastifyStatic middleware above
-      childContext.setNotFoundHandler(async (request, reply) => {
-        const requestPath = request.url;
+    // Handle root path with trailing slash
+    router.get(this.config.prefix + "/", async (request: BunRequest, response: BunResponse) => {
+      return await response.file(this.config.file);
+    });
 
-        // Check if the request looks like a static file (has a file extension)
-        const hasExtension = /\.[^/.]+$/.test(path.basename(requestPath));
+    // Set a catch-all handler for SPA client-side routing
+    router.fallback(async (request: BunRequest, response: BunResponse) => {
+      // Only handle paths under this SPA's prefix
+      if (!request.path.startsWith(this.config.prefix)) {
+        // Return void to let other handlers process
+        return;
+      }
 
-        if (hasExtension) {
-          // It looks like a static file request
-          // Check if the file exists
-          const filePath = path.join(root, requestPath);
-          try {
-            await fs.access(filePath);
-            // File exists, but fastifyStatic didn't serve it (shouldn't happen, but just in case)
-            return reply.sendFile(path.basename(requestPath), root);
-          } catch {
-            // File doesn't exist, return 404
-            return reply.code(404).send('File not found');
-          }
+      const requestPath = request.path;
+      const relativePath = requestPath.slice(this.config.prefix.length);
+
+      // Check if the request looks like a static file (has a file extension)
+      const hasExtension = /\.[^/.]+$/.test(path.basename(relativePath));
+
+      if (hasExtension) {
+        // It looks like a static file request
+        // Check if the file exists
+        const filePath = path.join(root, relativePath);
+        const file = Bun.file(filePath);
+        
+        if (await file.exists()) {
+          return new Response(file);
         }
+        
+        // File doesn't exist, return 404
+        return response.text('File not found', 404);
+      }
 
-        // It's a client-side route, serve index.html
-        return reply.sendFile(fileName, root);
-      });
-
-      done();
-    }, { prefix: this.config.prefix });
+      // It's a client-side route, serve the SPA entry file
+      return await response.file(this.config.file);
+    });
   }
 }

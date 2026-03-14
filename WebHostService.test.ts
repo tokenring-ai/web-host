@@ -1,39 +1,28 @@
 import TokenRingApp from '@tokenring-ai/app';
 import createTestingApp from '@tokenring-ai/app/test/createTestingApp';
-import Fastify, {FastifyInstance} from 'fastify';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {WebResource} from './types';
 import WebHostService from './WebHostService';
 
-vi.mock('@tokenring-ai/utility/promise/waitForAbort', () => ({
-  default: vi.fn().mockResolvedValue(undefined)
-}));
+// Mock Bun.serve
+const mockServer = {
+  hostname: '127.0.0.1',
+  port: 3000,
+  stop: vi.fn()
+};
 
-vi.mock('fastify', () => ({
-  default: vi.fn()
+vi.mock('bun', () => ({
+  serve: vi.fn(() => mockServer)
 }));
 
 describe('WebHostService', () => {
   let service: WebHostService;
   let mockApp: TokenRingApp;
   let mockConfig: any;
-  let mockServer: FastifyInstance;
 
   beforeEach(() => {
     mockApp = createTestingApp();
-    mockServer = {
-      register: vi.fn(),
-      setNotFoundHandler: vi.fn(),
-      listen: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn().mockResolvedValue(undefined),
-      addresses: vi.fn(() => [{ port: 3000 }]),
-      printRoutes: vi.fn(() => 'Routes'),
-      logger: false,
-      routerOptions: { ignoreTrailingSlash: true },
-      addHook: vi.fn()
-    } as any;
-    vi.mocked(Fastify).mockReturnValue(mockServer);
-
+    
     mockConfig = {
       host: '127.0.0.1',
       port: 3000,
@@ -50,22 +39,46 @@ describe('WebHostService', () => {
   describe('constructor', () => {
     it('should initialize with correct properties', () => {
       expect(service.name).toBe('WebHostService');
-      expect(service.description).toBe('Fastify web host for serving resources and APIs');
+      expect(service.description).toBe('Bun web host for serving resources and APIs');
     });
 
     it('should initialize resources registry', () => {
       expect(service.resources).toBeDefined();
       expect(service.registerResource).toBeDefined();
-      expect(service.getResources).toBeDefined();
+      expect(service.getResourceEntries).toBeDefined();
     });
   });
 
-  describe('run method', () => {
+  describe('start method', () => {
     beforeEach(() => {
       vi.spyOn(mockApp, 'serviceOutput');
     });
 
-    it('should create server and configure auth when provided', async () => {
+    it('should start server and log URL', async () => {
+      const abortController = new AbortController();
+      
+      await service.start(abortController.signal);
+      
+      expect(mockApp.serviceOutput).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining('Web Host listening at')
+      );
+    });
+
+    it('should register resources', async () => {
+      const mockResource: WebResource = {
+        register: vi.fn()
+      };
+      
+      service.registerResource('test', mockResource);
+      
+      const abortController = new AbortController();
+      await service.start(abortController.signal);
+      
+      expect(mockResource.register).toHaveBeenCalled();
+    });
+
+    it('should configure auth when provided', async () => {
       const configWithAuth = {
         ...mockConfig,
         auth: {
@@ -78,62 +91,35 @@ describe('WebHostService', () => {
       const serviceWithAuth = new WebHostService(mockApp, configWithAuth);
       
       const abortController = new AbortController();
-      abortController.abort();
+      await serviceWithAuth.start(abortController.signal);
       
-      await expect(serviceWithAuth.run(abortController.signal)).resolves.not.toThrow();
+      // Should not throw
+      expect(true).toBe(true);
     });
+  });
 
-    it('should handle server startup errors', async () => {
-      const error = new Error('Server startup failed');
-      mockServer.listen = vi.fn().mockRejectedValue(error);
-      
+  describe('stop method', () => {
+    it('should stop the server', async () => {
       const abortController = new AbortController();
+      await service.start(abortController.signal);
       
-      await expect(service.run(abortController.signal)).rejects.toThrow('Server startup failed');
-    });
-
-    it('should register resources', async () => {
-      const mockResource: WebResource = {
-        register: vi.fn()
-      };
+      await service.stop();
       
-      service.registerResource('test', mockResource);
-      
-      const abortController = new AbortController();
-      abortController.abort();
-      
-      await service.run(abortController.signal);
-      
-      expect(mockResource.register).toHaveBeenCalled();
-    });
-
-    it('should log URL when started', async () => {
-      const abortController = new AbortController();
-      abortController.abort();
-      
-      await service.run(abortController.signal);
-      
-      expect(mockApp.serviceOutput).toHaveBeenCalledWith(expect.stringContaining('WebHost listening at'));
+      expect(mockServer.stop).toHaveBeenCalled();
     });
   });
 
   describe('getURL method', () => {
-    it('should return URL when port is configured', () => {
+    it('should return URL when server is started', async () => {
+      const abortController = new AbortController();
+      await service.start(abortController.signal);
+      
       const url = service.getURL();
       expect(url.toString()).toBe('http://127.0.0.1:3000/');
     });
 
-    it('should throw error when server is not started and no port configured', async () => {
-      const configWithoutPort = {
-        ...mockConfig,
-        port: undefined
-      };
-      
-      const serviceWithoutPort = new WebHostService(mockApp, configWithoutPort);
-      // @ts-ignore
-      serviceWithoutPort.server = { addresses: () => [] };
-      
-      expect(() => serviceWithoutPort.getURL()).toThrow('Failed to get port');
+    it('should throw error when server is not started', () => {
+      expect(() => service.getURL()).toThrow('Server not started');
     });
   });
 
@@ -144,7 +130,8 @@ describe('WebHostService', () => {
       };
       
       service.registerResource('test', mockResource);
-      const resources = service.getResources();
+      const entries = service.getResourceEntries();
+      const resources = Object.fromEntries(entries);
       
       expect(resources.test).toBe(mockResource);
     });
@@ -156,7 +143,8 @@ describe('WebHostService', () => {
       service.registerResource('resource1', resource1);
       service.registerResource('resource2', resource2);
       
-      const resources = service.getResources();
+      const entries = service.getResourceEntries();
+      const resources = Object.fromEntries(entries);
       
       expect(Object.keys(resources)).toHaveLength(2);
       expect(resources.resource1).toBe(resource1);

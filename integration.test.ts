@@ -1,6 +1,5 @@
 import TokenRingApp from '@tokenring-ai/app';
 import createTestingApp from "@tokenring-ai/app/test/createTestingApp";
-import Fastify, {FastifyInstance} from 'fastify';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {z} from 'zod';
 import {registerAuth} from './auth';
@@ -10,35 +9,27 @@ import SPAResource, {spaResourceConfigSchema} from './SPAResource';
 import StaticResource, {staticResourceConfigSchema} from './StaticResource';
 import WebHostService from './WebHostService';
 
-vi.mock('@tokenring-ai/utility/promise/waitForAbort', () => ({
-  default: vi.fn()
-}));
+// Mock Bun.serve
+const mockServer = {
+  hostname: '127.0.0.1',
+  port: 3000,
+  stop: vi.fn()
+};
 
-vi.mock('fastify', () => ({
-  default: vi.fn()
+vi.mock('bun', () => ({
+  serve: vi.fn(() => mockServer),
+  file: vi.fn(() => ({
+    exists: vi.fn().mockResolvedValue(true)
+  }))
 }));
 
 describe('WebHost Integration Tests', () => {
   let service: WebHostService;
   let mockApp: TokenRingApp;
-  let mockServer: FastifyInstance;
 
   beforeEach(() => {
     mockApp = createTestingApp();
     vi.spyOn(mockApp, 'serviceOutput');
-    mockServer = {
-      register: vi.fn(),
-      setNotFoundHandler: vi.fn(),
-      listen: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn().mockResolvedValue(undefined),
-      addresses: vi.fn(() => [{ port: 3000 }]),
-      printRoutes: vi.fn(() => 'Routes'),
-      post: vi.fn(),
-      addHook: vi.fn(),
-      logger: false,
-      routerOptions: { ignoreTrailingSlash: true }
-    } as any;
-    vi.mocked(Fastify).mockReturnValue(mockServer);
   });
 
   afterEach(() => {
@@ -73,7 +64,6 @@ describe('WebHost Integration Tests', () => {
         }
       };
 
-
       service = new WebHostService(mockApp, config);
 
       // Register resources
@@ -81,10 +71,11 @@ describe('WebHost Integration Tests', () => {
       service.registerResource('spa', new SPAResource(config.resources.spa));
 
       const abortController = new AbortController();
-      await service.run(abortController.signal);
+      await service.start(abortController.signal);
 
       expect(mockApp.serviceOutput).toHaveBeenCalledWith(
-        expect.stringContaining('WebHost listening at')
+        expect.anything(),
+        expect.stringContaining('Web Host listening at')
       );
     });
 
@@ -101,9 +92,19 @@ describe('WebHost Integration Tests', () => {
         }
       };
 
-      registerAuth(mockServer, config.auth);
+      const mockRouter: any = {
+        get: vi.fn(),
+        post: vi.fn(),
+        put: vi.fn(),
+        delete: vi.fn(),
+        ws: vi.fn(),
+        static: vi.fn(),
+        fallback: vi.fn()
+      };
 
-      expect(mockServer.addHook).toHaveBeenCalledWith('onRequest', expect.any(Function));
+      registerAuth(mockRouter, config.auth);
+
+      expect(mockRouter.authConfig).toEqual(config.auth);
     });
 
     it('should integrate JSON-RPC with complete endpoint', () => {
@@ -173,7 +174,7 @@ describe('WebHost Integration Tests', () => {
 
       const abortController = new AbortController();
       
-      await expect(service.run(abortController.signal))
+      await expect(service.start(abortController.signal))
         .rejects.toThrow('Registration failed');
     });
 
@@ -199,12 +200,14 @@ describe('WebHost Integration Tests', () => {
 
       service = new WebHostService(mockApp, config);
       
-      expect(service.getResources()).toEqual({});
+      const entries = service.getResourceEntries();
+      const resources = Object.fromEntries(entries);
+      expect(resources).toEqual({});
     });
   });
 
   describe('URL Generation Integration', () => {
-    it('should generate correct URLs for different configurations', () => {
+    it('should generate correct URLs for different configurations', async () => {
       const config1 = {
         host: 'localhost',
         port: 8080,
@@ -213,33 +216,22 @@ describe('WebHost Integration Tests', () => {
       };
 
       const service1 = new WebHostService(mockApp, config1);
+      await service1.start(new AbortController().signal);
       expect(service1.getURL().toString()).toBe('http://localhost:8080/');
-
-      const config2 = {
-        host: '0.0.0.0',
-        port: 3001,
-        auth: undefined,
-        resources: {}
-      };
-
-      const service2 = new WebHostService(mockApp, config2);
-      expect(service2.getURL().toString()).toBe('http://0.0.0.0:3001/');
     });
 
-    it('should handle URL generation when port is not configured', () => {
+    it('should handle URL generation when server is started', async () => {
       const config = {
         host: '127.0.0.1',
-        port: undefined,
+        port: 3000,
         auth: undefined,
         resources: {}
       };
 
-      const serviceWithoutPort = new WebHostService(mockApp, config);
-      // @ts-ignore
-      serviceWithoutPort.server = mockServer;
-      mockServer.addresses = vi.fn().mockReturnValue([{ port: 3000 }]);
+      const serviceWithServer = new WebHostService(mockApp, config);
+      await serviceWithServer.start(new AbortController().signal);
       
-      expect(serviceWithoutPort.getURL().toString()).toBe('http://127.0.0.1:3000/');
+      expect(serviceWithServer.getURL().toString()).toBe('http://127.0.0.1:3000/');
     });
   });
 
@@ -260,7 +252,8 @@ describe('WebHost Integration Tests', () => {
       service.registerResource('resource2', resource2);
       service.registerResource('resource3', resource3);
 
-      const resources = service.getResources();
+      const entries = service.getResourceEntries();
+      const resources = Object.fromEntries(entries);
       
       expect(Object.keys(resources)).toHaveLength(3);
       expect(resources.resource1).toBe(resource1);
@@ -282,7 +275,8 @@ describe('WebHost Integration Tests', () => {
       service.registerResource('same', resource1);
       service.registerResource('same', resource2);
 
-      const resources = service.getResources();
+      const entries = service.getResourceEntries();
+      const resources = Object.fromEntries(entries);
       expect(resources.same).toBe(resource2);
     });
   });

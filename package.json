@@ -1,18 +1,14 @@
 {
   "name": "@tokenring-ai/web-host",
   "version": "0.2.0",
-  "description": "Fastify-based web host for TokenRing services",
+  "description": "Bun-based web host for TokenRing services",
   "dependencies": {
     "@tokenring-ai/app": "0.2.0",
     "@tokenring-ai/agent": "0.2.0",
     "@tokenring-ai/chat": "0.2.0",
     "@tokenring-ai/utility": "0.2.0",
     "@tokenring-ai/rpc": "0.2.0",
-    "fastify": "^5.8.2",
-    "@fastify/websocket": "^11.2.0",
-    "@fastify/static": "^9.0.0",
-    "zod": "^4.3.6",
-    "ws": "^8.19.0"
+    "zod": "^4.3.6"
   },
   "exports": {
     ".": "./index.ts",
@@ -22,9 +18,8 @@
   "license": "MIT",
   "type": "module",
   "devDependencies": {
-    "vitest": "^4.0.18",
-    "typescript": "^5.9.3",
-    "@types/ws": "^8.18.1"
+    "vitest": "^4.1.0",
+    "typescript": "^5.9.3"
   },
   "scripts": {
     "test": "vitest run",

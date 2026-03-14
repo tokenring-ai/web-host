@@ -1,6 +1,4 @@
-import fastifyStatic from "@fastify/static";
-import type {WebResource} from "@tokenring-ai/web-host/types";
-import type {FastifyInstance} from "fastify";
+import type {WebResource, BunRouter} from "./types.ts";
 import {z} from "zod";
 
 export const staticResourceConfigSchema = z.object({
@@ -15,17 +13,11 @@ export const staticResourceConfigSchema = z.object({
 export default class StaticResource implements WebResource {
   constructor(private config: z.output<typeof staticResourceConfigSchema>) {}
 
-  async register(server: FastifyInstance): Promise<void> {
-    await server.register(fastifyStatic, {
-      root: this.config.root,
-      prefix: this.config.prefix,
-      index: this.config.indexFile
+  async register(router: BunRouter): Promise<void> {
+    // Register static file serving
+    router.static(this.config.prefix, this.config.root, {
+      index: this.config.indexFile,
+      notFound: this.config.notFoundFile
     });
-
-    if (this.config.notFoundFile) {
-      server.setNotFoundHandler((request, reply) => {
-        reply.sendFile(this.config.notFoundFile!); //, this.config.root);
-      });
-    }
   }
 }
