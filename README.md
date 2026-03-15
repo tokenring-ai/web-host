@@ -1,16 +1,16 @@
 # @tokenring-ai/web-host
 
-Fastify-based web hosting service for TokenRing applications, providing a pluggable system for serving web resources, static content, SPAs, and JSON-RPC APIs.
+Bun-based web hosting service for TokenRing applications, providing a pluggable system for serving web resources, static content, SPAs, and JSON-RPC APIs.
 
 ## Overview
 
-The `@tokenring-ai/web-host` package serves as the web foundation for TokenRing applications. It provides a high-performance web server built on Fastify with a resource registration system that allows different packages to extend web functionality through plugins. The package supports static file serving, SPA routing, JSON-RPC endpoints, WebSocket RPC, and authentication.
+The `@tokenring-ai/web-host` package serves as the web foundation for TokenRing applications. It provides a high-performance web server built on **Bun.serve** with a resource registration system that allows different packages to extend web functionality through plugins. The package supports static file serving, SPA routing, JSON-RPC endpoints, WebSocket RPC, and authentication.
 
 ## Features
 
-- **Fastify Server**: High-performance, low-latency web server with plugin architecture
+- **Bun Server**: High-performance, low-latency web server using Bun's native HTTP and WebSocket support
 - **Resource Registration System**: Pluggable architecture for registering web resources via KeyedRegistry
-- **Static File Serving**: Support for serving static files with custom routing and 404 handling
+- **Static File Serving**: Support for serving static files with custom routing
 - **SPA Support**: Single Page Application routing with fallback handling for client-side routing
 - **JSON-RPC API**: Built-in JSON-RPC 2.0 support with streaming via Server-Sent Events
 - **WebSocket RPC**: WebSocket-based RPC endpoints for real-time communication with streaming support
@@ -92,7 +92,7 @@ webHostService.registerResource("spa", spaResource);
 
 **SPA Routing Behavior:**
 
-- Static files (JS, CSS, images) are served by the `fastifyStatic` middleware
+- Static files (JS, CSS, images) are served by Bun's native file serving
 - The root path serves the specified index.html file
 - All other routes that don't match static files also serve index.html (for client-side routing)
 - If the SPA file doesn't exist, a warning is logged but the server continues
@@ -488,7 +488,7 @@ try {
 ```typescript
 class WebHostService implements TokenRingService {
   readonly name = "WebHostService";
-  description = "Fastify web host for serving resources and APIs";
+  description = "Bun web host for serving resources and APIs";
 
   resources: KeyedRegistry<WebResource>;
   registerResource: (name: string, resource: WebResource) => void;
@@ -517,17 +517,16 @@ class WebHostService implements TokenRingService {
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `start` | `(signal: AbortSignal) => Promise<void>` | Start the Fastify server and register all resources |
+| `start` | `(signal: AbortSignal) => Promise<void>` | Start the Bun server and register all resources |
 | `stop` | `() => Promise<void>` | Stop the server and close all connections |
 | `getURL` | `() => URL` | Get the current server URL |
 
 **Server Lifecycle:**
 
 1. **Start Phase:**
-   - Registers WebSocket support via `@fastify/websocket`
    - Registers authentication if configured
    - Registers all web resources
-   - Binds to configured host and port
+   - Binds to configured host and port using Bun.serve
    - Logs the server URL
 
 2. **Stop Phase:**
@@ -537,7 +536,7 @@ class WebHostService implements TokenRingService {
 
 ```typescript
 interface WebResource {
-  register(server: FastifyInstance): Promise<void>;
+  register(router: BunRouter): Promise<void>;
 }
 ```
 
@@ -545,7 +544,23 @@ interface WebResource {
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `register` | `(server: FastifyInstance) => Promise<void>` | Register routes, handlers, and middleware |
+| `register` | `(router: BunRouter) => Promise<void>` | Register routes, handlers, and static file serving |
+
+### BunRouter Interface
+
+The router interface used by resources to register handlers:
+
+```typescript
+interface BunRouter {
+  get(path: string, handler: RouteHandler): void;
+  post(path: string, handler: RouteHandler): void;
+  put(path: string, handler: RouteHandler): void;
+  delete(path: string, handler: RouteHandler): void;
+  ws(path: string, handler: WebSocketHandler): void;
+  static(prefix: string, root: string, options?: StaticOptions): void;
+  fallback(handler: RouteHandler): void;
+}
+```
 
 ### Resource Configuration Schemas
 
@@ -568,7 +583,7 @@ const staticResourceConfigSchema = z.object({
 | `root` | string | Directory path for static files |
 | `description` | string | Human-readable description |
 | `indexFile` | string | Default index file name |
-| `notFoundFile` | string | Optional custom 404 page |
+| `notFoundFile` | string | Optional custom 404 page (note: not currently used by Bun) |
 | `prefix` | string | URL prefix for this resource |
 
 #### SPAResource Config
@@ -613,7 +628,7 @@ const AuthConfigSchema = z.object({
 ```typescript
 const WebHostConfigSchema = z.object({
   host: z.string().default("127.0.0.1"),
-  port: z.number().optional(),
+  port: z.number().default(0),
   auth: AuthConfigSchema.optional(),
   resources: z.record(z.string(), z.discriminatedUnion("type", [
     staticResourceConfigSchema,
@@ -625,7 +640,7 @@ const WebHostConfigSchema = z.object({
 | Option | Type | Required | Default | Description |
 |--------|------|----------|---------|-------------|
 | `host` | string | No | `"127.0.0.1"` | Host address to bind to |
-| `port` | number | No | - | Port number. If not specified, an available port is automatically assigned |
+| `port` | number | No | `0` | Port number. If 0 or not specified, an available port is automatically assigned |
 | `auth` | AuthConfig | No | - | Authentication configuration |
 | `resources` | Record | No | - | Web resources to register at startup |
 
@@ -636,6 +651,12 @@ The package exports the following types:
 - `WebResource`: Interface for web resources
 - `ParsedAuthConfig`: Type for parsed authentication configuration
 - `ParsedWebHostConfig`: Type for parsed web host configuration
+- `BunRouter`: Router interface for registering handlers
+- `BunRequest`: Request object passed to route handlers
+- `BunResponse`: Response utilities
+- `BunWebSocket`: WebSocket wrapper interface
+- `RouteHandler`: Route handler function type
+- `WebSocketHandler`: WebSocket handler interface
 
 ## Commands
 
@@ -684,7 +705,7 @@ The web-host package works seamlessly with other TokenRing packages:
 - **@tokenring-ai/agent**: Provides RPC endpoints for agent management and command registration
 - **@tokenring-ai/app**: Service registration and lifecycle management
 - **@tokenring-ai/rpc**: RPC endpoint registration and execution
-- **@tokenring-ai/chat**: Chat services and human interface
+- **@tokenring-ai/chat**: Chat services and human interaction
 - **@tokenring-ai/utility**: Registry and utility functions
 
 ## Package Structure
@@ -759,19 +780,19 @@ const webHost = app.getServiceByType(WebHostService);
 if (webHost) {
   // Create a custom API resource
   const apiResource: WebResource = {
-    async register(server) {
-      server.get("/api/health", async () => {
-        return { status: "ok" };
+    async register(router) {
+      router.get("/api/health", async (request, response) => {
+        return response.json({ status: "ok" });
       });
 
-      server.post("/api/data", async (request, reply) => {
-        const data = request.body;
-        return { received: data };
+      router.post("/api/data", async (request, response) => {
+        const data = await request.json();
+        return response.json({ received: data });
       });
 
       // Access authenticated user if authentication is enabled
-      server.get("/api/whoami", async (request) => {
-        return { user: (request as any).user };
+      router.get("/api/whoami", async (request, response) => {
+        return response.json({ user: (request as any).user });
       });
     }
   };
@@ -921,17 +942,12 @@ bun test:coverage
 - `@tokenring-ai/chat` (0.2.0) - Chat service for human interaction
 - `@tokenring-ai/utility` (0.2.0) - Shared utilities and helpers
 - `@tokenring-ai/rpc` (0.2.0) - RPC endpoint registration and execution
-- `fastify` (^5.7.4) - High-performance web server
-- `@fastify/websocket` (^11.2.0) - WebSocket support for Fastify
-- `@fastify/static` (^9.0.0) - Static file serving for Fastify
 - `zod` (^4.3.6) - Schema validation
-- `ws` (^8.19.0) - WebSocket implementation
 
 ### Development Dependencies
 
-- `vitest` (^4.0.18) - Testing framework
+- `vitest` (^4.1.0) - Testing framework
 - `typescript` (^5.9.3) - TypeScript compiler
-- `@types/ws` (^8.18.1) - WebSocket type definitions
 
 ## License
 
