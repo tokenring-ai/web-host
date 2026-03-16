@@ -1,14 +1,10 @@
-import Agent from "@tokenring-ai/agent/Agent";
-import {TokenRingAgentCommand} from "@tokenring-ai/agent/types";
+import type {AgentCommandInputSchema, AgentCommandInputType, TokenRingAgentCommand} from "@tokenring-ai/agent/types";
 import markdownList from "@tokenring-ai/utility/string/markdownList";
 import WebHostService from "../WebHostService.js";
 
 const description = "Show web host URL and available resources";
 
-const help = `# /webhost
-
-## Description
-Displays the current web host URL and lists all registered resources.
+const help = `Displays the current web host URL and lists all registered resources.
 
 ## Usage
 /webhost
@@ -25,7 +21,9 @@ Displays the current web host URL and lists all registered resources.
 #   - trpcBackend
 #   - defaultFrontend`;
 
-async function execute(_remainder: string, agent: Agent): Promise<string> {
+const inputSchema = {} as const satisfies AgentCommandInputSchema;
+
+async function execute({agent}: AgentCommandInputType<typeof inputSchema>): Promise<string> {
   const webHost = agent.getServiceByType(WebHostService);
   
   if (!webHost) {
@@ -49,6 +47,7 @@ async function execute(_remainder: string, agent: Agent): Promise<string> {
 export default {
   name: "webhost",
   description,
+  inputSchema,
   execute,
   help,
-} satisfies TokenRingAgentCommand;
+} satisfies TokenRingAgentCommand<typeof inputSchema>;
