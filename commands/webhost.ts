@@ -3,7 +3,7 @@ import {TokenRingAgentCommand} from "@tokenring-ai/agent/types";
 import markdownList from "@tokenring-ai/utility/string/markdownList";
 import WebHostService from "../WebHostService.js";
 
-const description = "/webhost - Show web host URL and available resources";
+const description = "Show web host URL and available resources";
 
 const help = `# /webhost
 
