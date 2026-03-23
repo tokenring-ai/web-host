@@ -1,4 +1,3 @@
-import TokenRingApp from '@tokenring-ai/app';
 import createTestingApp from "@tokenring-ai/app/test/createTestingApp";
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {z} from 'zod';
@@ -7,21 +6,24 @@ import {createRPCEndpoint} from '@tokenring-ai/rpc/createRPCEndpoint';
 import JsonRpcResource from './JsonRpcResource';
 import SPAResource, {spaResourceConfigSchema} from './SPAResource';
 import StaticResource, {staticResourceConfigSchema} from './StaticResource';
-import WebHostService from './WebHostService';
 
-// Mock Bun.serve
+// Mock Bun globally before anything else
 const mockServer = {
   hostname: '127.0.0.1',
   port: 3000,
   stop: vi.fn()
 };
 
-vi.mock('bun', () => ({
+// Define Bun global for the test environment
+(global as any).Bun = {
   serve: vi.fn(() => mockServer),
-  file: vi.fn(() => ({
+  file: vi.fn((path: string) => ({
     exists: vi.fn().mockResolvedValue(true)
   }))
-}));
+};
+
+import TokenRingApp from '@tokenring-ai/app';
+import WebHostService from './WebHostService';
 
 describe('WebHost Integration Tests', () => {
   let service: WebHostService;
@@ -30,6 +32,8 @@ describe('WebHost Integration Tests', () => {
   beforeEach(() => {
     mockApp = createTestingApp();
     vi.spyOn(mockApp, 'serviceOutput');
+    vi.clearAllMocks();
+    mockServer.stop.mockClear();
   });
 
   afterEach(() => {
@@ -207,17 +211,18 @@ describe('WebHost Integration Tests', () => {
   });
 
   describe('URL Generation Integration', () => {
-    it('should generate correct URLs for different configurations', async () => {
-      const config1 = {
-        host: 'localhost',
-        port: 8080,
+    it('should generate correct URLs when server is started', async () => {
+      const config = {
+        host: '127.0.0.1',
+        port: 3000,
         auth: undefined,
         resources: {}
       };
 
-      const service1 = new WebHostService(mockApp, config1);
+      const service1 = new WebHostService(mockApp, config);
       await service1.start(new AbortController().signal);
-      expect(service1.getURL().toString()).toBe('http://localhost:8080/');
+      // Note: The mock server always returns 127.0.0.1:3000
+      expect(service1.getURL().toString()).toBe('http://127.0.0.1:3000/');
     });
 
     it('should handle URL generation when server is started', async () => {

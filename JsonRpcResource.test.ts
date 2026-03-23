@@ -95,9 +95,13 @@ describe('JsonRpcResource', () => {
       await resource.register(mockRouter);
       
       const result = await registeredHandler(mockRequest, mockResponse);
-      const responseData = JSON.parse((result as Response).headers.get('content-type')?.includes('json') ? await (result as Response).text() : '');
-
-      expect(mockResponse.json).toHaveBeenCalledWith({
+      
+      // Verify the response is a Response object with JSON content
+      expect(result).toBeInstanceOf(Response);
+      const responseText = await result.text();
+      const responseData = JSON.parse(responseText);
+      
+      expect(responseData).toEqual({
         jsonrpc: '2.0',
         id: 1,
         result: { result: 'success' }

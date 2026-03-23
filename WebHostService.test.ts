@@ -1,23 +1,27 @@
-import TokenRingApp from '@tokenring-ai/app';
 import createTestingApp from '@tokenring-ai/app/test/createTestingApp';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {WebResource} from './types';
-import WebHostService from './WebHostService';
 
-// Mock Bun.serve
+// Mock Bun globally before anything else
 const mockServer = {
   hostname: '127.0.0.1',
   port: 3000,
   stop: vi.fn()
 };
 
-vi.mock('bun', () => ({
-  serve: vi.fn(() => mockServer)
-}));
+// Define Bun global for the test environment
+(global as any).Bun = {
+  serve: vi.fn(() => mockServer),
+  file: vi.fn((path: string) => ({
+    exists: vi.fn().mockResolvedValue(true)
+  }))
+};
+
+import WebHostService from './WebHostService';
 
 describe('WebHostService', () => {
   let service: WebHostService;
-  let mockApp: TokenRingApp;
+  let mockApp: any;
   let mockConfig: any;
 
   beforeEach(() => {
@@ -30,6 +34,10 @@ describe('WebHostService', () => {
       resources: {}
     };
     service = new WebHostService(mockApp, mockConfig);
+    
+    vi.clearAllMocks();
+    // Reset mock server state
+    mockServer.stop.mockClear();
   });
 
   afterEach(() => {
