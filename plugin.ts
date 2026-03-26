@@ -3,13 +3,13 @@ import {TokenRingPlugin} from "@tokenring-ai/app";
 import {RpcService} from "@tokenring-ai/rpc";
 
 import {z} from "zod";
-import webhost from "./commands/webhost.js";
+import webhost from "./commands/webhost.ts";
 import JsonRpcResource from "./JsonRpcResource.ts";
 import packageJSON from "./package.json" with {type: "json"};
 import {WebHostConfigSchema} from "./schema.ts";
 import SPAResource, {spaResourceConfigSchema} from "./SPAResource.ts";
 import StaticResource, {staticResourceConfigSchema} from "./StaticResource.ts";
-import WebHostService from "./WebHostService.js";
+import WebHostService from "./WebHostService.ts";
 import WsRpcResource from "./WsRpcResource.ts";
 
 const packageConfigSchema = z.object({

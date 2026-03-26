@@ -1,6 +1,6 @@
 import type {AgentCommandInputSchema, AgentCommandInputType, TokenRingAgentCommand} from "@tokenring-ai/agent/types";
 import markdownList from "@tokenring-ai/utility/string/markdownList";
-import WebHostService from "../WebHostService.js";
+import WebHostService from "../WebHostService.ts";
 
 const description = "Show web host URL and available resources";
 
