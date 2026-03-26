@@ -50,7 +50,7 @@ function createJsonRPCStream<T extends RPCSchema, K extends keyof T["methods"]>(
   schemas: T,
   key: K
 ) {
-  return async function* (params: z.infer<T["methods"][K]["input"]>, signal: AbortSignal): AsyncGenerator<z.infer<T["methods"][K]["result"]>> {
+  return async function* (params: z.infer<T[ "methods"][K][ "input"]>, signal: AbortSignal): AsyncGenerator<z.infer<T[ "methods"][K][ "result"]>> {
     const url = new URL(schemas.path, baseURL);
     const response = await fetch(url, {
       method: 'POST',
@@ -67,27 +67,39 @@ function createJsonRPCStream<T extends RPCSchema, K extends keyof T["methods"]>(
       signal
     });
 
-    const reader = response.body!.getReader();
+    if (!response.body) {
+      throw new Error("Response body is null");
+    }
+
+    const reader = response.body.getReader();
     let accumulatedData = '';
 
-    while (! signal.aborted) {
-      const {done, value} = await reader.read();
-      if (done) break;
+    try {
+      while (! signal.aborted) {
+        const {done, value} = await reader.read();
+        if (done) break;
 
-      accumulatedData += new TextDecoder().decode(value);
+        accumulatedData += new TextDecoder().decode(value);
 
-      // Basic parsing for demonstration, a more robust parser is needed for production
-      const events = accumulatedData.split('\n\n');
-      accumulatedData = events.pop()!; // Keep incomplete event data
+        // Basic parsing for demonstration, a more robust parser is needed for production
+        const events = accumulatedData.split('\n\n');
+        accumulatedData = events.pop()!; // Keep incomplete event data
 
-      for (let event of events) {
-        event = event.trim();
-        if (!event) continue; // Skip empty lines
+        for (let event of events) {
+          event = event.trim();
+          if (!event) continue; // Skip empty lines
 
-        if (event.startsWith('data:')) {
-          yield JSON.parse(event.substring(5)).result as ResultOfRPCCall<T, K>;
+          if (event.startsWith('data:')) {
+            try {
+              yield JSON.parse(event.substring(5)).result as ResultOfRPCCall<T, K>;
+            } catch (parseError) {
+              throw new Error(`Failed to parse stream data: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+            }
+          }
         }
       }
+    } finally {
+      reader.releaseLock();
     }
   }
 }

@@ -18,6 +18,6 @@ export const WebHostConfigSchema = z.object({
     staticResourceConfigSchema,
     spaResourceConfigSchema,
   ])).optional(),
-})
+});
 
 export type ParsedWebHostConfig = z.output<typeof WebHostConfigSchema>;
