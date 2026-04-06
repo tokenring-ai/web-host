@@ -1,7 +1,7 @@
 {
   "name": "@tokenring-ai/web-host",
   "version": "0.2.0",
-  "description": "Bun-based web host for TokenRing services",
+  "description": "Bun-powered web server for hosting TokenRing application services.",
   "dependencies": {
     "@tokenring-ai/app": "0.2.0",
     "@tokenring-ai/agent": "0.2.0",

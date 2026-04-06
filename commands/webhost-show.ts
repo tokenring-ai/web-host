@@ -7,28 +7,12 @@ const description = "Show web host URL and available resources";
 const help = `Displays the current web host URL and lists all registered resources.
 
 ## Usage
-/webhost
-
-## Output
-- Web host URL with port
-- List of registered resources and their names
-
-## Example
-/webhost
-# Output:
-# Web host running at: http://localhost:3000
-# Registered resources:
-#   - trpcBackend
-#   - defaultFrontend`;
+/webhost show`;
 
 const inputSchema = {} as const satisfies AgentCommandInputSchema;
 
 async function execute({agent}: AgentCommandInputType<typeof inputSchema>): Promise<string> {
-  const webHost = agent.getServiceByType(WebHostService);
-  
-  if (!webHost) {
-    return "WebHostService is not running";
-  }
+  const webHost = agent.requireServiceByType(WebHostService);
 
   const resources = webHost.resources.getAllItemNames();
 
@@ -45,7 +29,7 @@ async function execute({agent}: AgentCommandInputType<typeof inputSchema>): Prom
 }
 
 export default {
-  name: "webhost",
+  name: "webhost show",
   description,
   inputSchema,
   execute,

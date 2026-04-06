@@ -108,7 +108,16 @@ export default class WebHostService implements TokenRingService {
 
   constructor(private app: TokenRingApp, private config: ParsedWebHostConfig) {}
 
-  async start(signal: AbortSignal) {
+  get listening() {
+    return !!this.server;
+  }
+
+  async listen() {
+    if (this.server) {
+      throw new Error("Server already listening");
+    }
+    this.router = new Router();
+
     // Register authentication if configured
     if (this.config.auth) {
       registerAuth(this.router, this.config.auth);
@@ -134,6 +143,19 @@ export default class WebHostService implements TokenRingService {
     });
 
     this.app.serviceOutput(this, `Web Host listening at ${this.getURL()}`);
+  }
+
+  async reconfigure(config: ParsedWebHostConfig) {
+    const wasListening = this.listening;
+    if (wasListening) {
+      await this.stop();
+    }
+
+    this.config = config;
+
+    if (config.autoStart || wasListening) {
+      await this.listen();
+    }
   }
 
   async stop() {

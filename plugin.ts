@@ -3,46 +3,31 @@ import {TokenRingPlugin} from "@tokenring-ai/app";
 import {RpcService} from "@tokenring-ai/rpc";
 
 import {z} from "zod";
-import webhost from "./commands/webhost.ts";
+import commands from "./commands.ts";
 import JsonRpcResource from "./JsonRpcResource.ts";
 import packageJSON from "./package.json" with {type: "json"};
 import {WebHostConfigSchema} from "./schema.ts";
-import SPAResource, {spaResourceConfigSchema} from "./SPAResource.ts";
-import StaticResource, {staticResourceConfigSchema} from "./StaticResource.ts";
 import WebHostService from "./WebHostService.ts";
 import WsRpcResource from "./WsRpcResource.ts";
 
 const packageConfigSchema = z.object({
-  webHost: WebHostConfigSchema.optional()
+  webHost: WebHostConfigSchema
 });
 
 export default {
   name: packageJSON.name,
+  displayName: "Web Host",
   version: packageJSON.version,
   description: packageJSON.description,
   install(app, config) {
-    if (config.webHost) {
-      const webHostService = new WebHostService(app, config.webHost);
-      app.addServices(webHostService);
+    const webHostService = new WebHostService(app, config.webHost);
+    app.addServices(webHostService);
 
-      app.waitForService(AgentCommandService, service => {
-        service.addAgentCommands(webhost);
-      });
-
-      for (const resourceName in config.webHost.resources) {
-        const resourceConfig = config.webHost.resources[resourceName];
-        if (resourceConfig.type === 'static') {
-          webHostService.registerResource(resourceName, new StaticResource(staticResourceConfigSchema.parse(resourceConfig)));
-        }
-
-        if (resourceConfig.type === 'spa') {
-          webHostService.registerResource(resourceName, new SPAResource(spaResourceConfigSchema.parse(resourceConfig)));
-        }
-      }
-    }
+    app.waitForService(AgentCommandService, service => {
+      service.addAgentCommands(...commands);
+    });
   },
-  start(app, config) {
-    if (! config.webHost) return;
+  async start(app, config) {
     const webHostService = app.requireService(WebHostService);
     const rpcService = app.getService(RpcService);
 
@@ -53,6 +38,12 @@ export default {
         webHostService.registerResource(`${endpoint.name} (WS)`, new WsRpcResource(app, endpoint));
       }
     }
+    if (config.webHost.autoStart) {
+      await webHostService.listen();
+    }
+  },
+  async reconfigure(app, config) {
+    await app.requireService(WebHostService).reconfigure(config.webHost);
   },
   config: packageConfigSchema
 } satisfies TokenRingPlugin<typeof packageConfigSchema>;

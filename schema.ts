@@ -1,6 +1,4 @@
 import z from "zod";
-import {spaResourceConfigSchema} from "./SPAResource.ts";
-import {staticResourceConfigSchema} from "./StaticResource.ts";
 
 export const AuthConfigSchema = z.object({
   users: z.record(z.string(), z.object({
@@ -11,13 +9,10 @@ export const AuthConfigSchema = z.object({
 export type ParsedAuthConfig = z.output<typeof AuthConfigSchema>;
 
 export const WebHostConfigSchema = z.object({
+  autoStart: z.boolean().default(false),
   host: z.string().default("127.0.0.1"),
   port: z.number().default(0),
   auth: AuthConfigSchema.optional(),
-  resources: z.record(z.string(), z.discriminatedUnion("type", [
-    staticResourceConfigSchema,
-    spaResourceConfigSchema,
-  ])).optional(),
-});
+}).prefault({});
 
 export type ParsedWebHostConfig = z.output<typeof WebHostConfigSchema>;
