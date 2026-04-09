@@ -1,5 +1,5 @@
-import type {BunRouter, BunRequest, BunResponse} from "./types.ts";
 import type {ParsedAuthConfig} from "./schema.ts";
+import type {BunRequest, BunResponse, BunRouter} from "./types.ts";
 
 /**
  * Authentication middleware for Bun server

@@ -1,7 +1,7 @@
+import {RPCSchema} from '@tokenring-ai/rpc/types';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {z} from 'zod';
-import createJsonRPCClient, {ParamsOfRPCCall, resetRpcId, ResultOfRPCCall} from './createJsonRPCClient';
-import {RPCSchema} from '@tokenring-ai/rpc/types';
+import createJsonRPCClient, {resetRpcId, ResultOfRPCCall} from './createJsonRPCClient';
 
 // Mock fetch
 global.fetch = vi.fn();

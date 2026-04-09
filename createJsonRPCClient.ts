@@ -1,5 +1,5 @@
-import {z} from "zod";
 import type {FunctionTypeOfRPCCall, ResultOfRPCCall, RPCSchema} from "@tokenring-ai/rpc/types";
+import {z} from "zod";
 
 let rpcId = 0;
 

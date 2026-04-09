@@ -1,5 +1,5 @@
-import type {WebResource, BunRouter} from "./types.ts";
 import {z} from "zod";
+import type {BunRouter, WebResource} from "./types.ts";
 
 export const staticResourceConfigSchema = z.object({
   type: z.literal("static"),

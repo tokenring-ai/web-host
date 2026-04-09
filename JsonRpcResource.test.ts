@@ -1,7 +1,7 @@
 import createTestingApp from '@tokenring-ai/app/test/createTestingApp';
+import {RpcEndpoint} from '@tokenring-ai/rpc/types';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {z} from 'zod';
-import {RpcEndpoint} from '@tokenring-ai/rpc/types';
 import JsonRpcResource from './JsonRpcResource';
 import {BunRouter} from './types';
 

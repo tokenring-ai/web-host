@@ -1,6 +1,7 @@
 import createTestingApp from '@tokenring-ai/app/test/createTestingApp';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {WebResource} from './types';
+import WebHostService from './WebHostService';
 
 // Mock Bun globally before anything else
 const mockServer = {
@@ -16,8 +17,6 @@ const mockServer = {
     exists: vi.fn().mockResolvedValue(true)
   }))
 };
-
-import WebHostService from './WebHostService';
 
 describe('WebHostService', () => {
   let service: WebHostService;

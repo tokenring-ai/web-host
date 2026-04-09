@@ -1,7 +1,7 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest';
-import {registerAuth, checkAuth, unauthorizedResponse} from './auth';
+import {checkAuth, registerAuth, unauthorizedResponse} from './auth';
 import {AuthConfigSchema} from "./schema";
-import {BunRouter, BunRequest, BunResponse} from './types';
+import {BunRequest, BunResponse, BunRouter} from './types';
 
 describe('auth', () => {
   let mockRouter: BunRouter;

@@ -1,7 +1,6 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import SPAResource, {spaResourceConfigSchema} from './SPAResource';
 import {BunRouter} from './types';
-import path from 'path';
 
 // Mock Bun.file
 vi.mock('bun', () => ({

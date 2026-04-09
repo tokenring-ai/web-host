@@ -1,6 +1,6 @@
-import type {WebResource, BunRouter, BunRequest, BunResponse} from "./types.ts";
-import {z} from "zod";
 import path from 'path';
+import {z} from "zod";
+import type {BunRequest, BunResponse, BunRouter, WebResource} from "./types.ts";
 
 export const spaResourceConfigSchema = z.object({
   type: z.literal("spa"),
