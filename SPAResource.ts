@@ -1,33 +1,39 @@
-import path from 'path';
+import path from "node:path";
 import {z} from "zod";
-import type {BunRequest, BunResponse, BunRouter, WebResource} from "./types.ts";
+import type {BunRequest, BunResponse, BunRouter, WebResource,} from "./types.ts";
 
 export const spaResourceConfigSchema = z.object({
   type: z.literal("spa"),
   file: z.string(),
   description: z.string(),
-  prefix: z.string()
+  prefix: z.string(),
 });
 
 export default class SPAResource implements WebResource {
-  constructor(public config: z.output<typeof spaResourceConfigSchema>) {}
+  constructor(public config: z.output<typeof spaResourceConfigSchema>) {
+  }
 
-  async register(router: BunRouter): Promise<void> {
+  register(router: BunRouter) {
     const root = path.dirname(this.config.file);
-    const fileName = path.basename(this.config.file);
 
     // Register static file serving for the SPA directory
     router.static(this.config.prefix, root);
 
     // Handle the root path (both with and without trailing slash)
-    router.get(this.config.prefix, async (request: BunRequest, response: BunResponse) => {
-      return await response.file(this.config.file);
-    });
+    router.get(
+      this.config.prefix,
+      async (_request: BunRequest, response: BunResponse) => {
+        return await response.file(this.config.file);
+      },
+    );
 
     // Handle root path with trailing slash
-    router.get(this.config.prefix + "/", async (request: BunRequest, response: BunResponse) => {
-      return await response.file(this.config.file);
-    });
+    router.get(
+      this.config.prefix + "/",
+      async (_request: BunRequest, response: BunResponse) => {
+        return await response.file(this.config.file);
+      },
+    );
 
     // Set a catch-all handler for SPA client-side routing
     router.fallback(async (request: BunRequest, response: BunResponse) => {
@@ -48,13 +54,13 @@ export default class SPAResource implements WebResource {
         // Check if the file exists
         const filePath = path.join(root, relativePath);
         const file = Bun.file(filePath);
-        
+
         if (await file.exists()) {
           return new Response(file);
         }
-        
+
         // File doesn't exist, return 404
-        return response.text('File not found', 404);
+        return response.text("File not found", 404);
       }
 
       // It's a client-side route, serve the SPA entry file

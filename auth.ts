@@ -1,34 +1,16 @@
 import type {ParsedAuthConfig} from "./schema.ts";
-import type {BunRequest, BunResponse, BunRouter} from "./types.ts";
-
-/**
- * Authentication middleware for Bun server
- * Supports both Basic and Bearer token authentication
- */
-export function registerAuth(router: BunRouter, config: ParsedAuthConfig) {
-  // Store original fallback handler (if any)
-  const originalHandlers: Map<string, Map<string, any>> = new Map();
-  
-  // We need to wrap all route handlers with auth check
-  // For now, we'll use a simple approach: add auth check as a fallback
-  // that runs before the actual route handler
-  
-  // This will be integrated into the fetch handler in WebHostService
-  // For now, we'll export the auth checker function
-  
-  (router as any).authConfig = config;
-}
+import type {BunRequest, BunResponse} from "./types.ts";
 
 /**
  * Check authentication for a request
  * Returns the authenticated username or null if auth fails
  */
 export function checkAuth(
-  request: BunRequest, 
-  config: ParsedAuthConfig
+  request: BunRequest,
+  config: ParsedAuthConfig,
 ): string | null {
   const auth = request.headers.get("authorization");
-  
+
   if (!auth) {
     return null;
   }

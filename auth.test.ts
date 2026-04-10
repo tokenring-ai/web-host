@@ -1,5 +1,5 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest';
-import {checkAuth, registerAuth, unauthorizedResponse} from './auth';
+import {checkAuth, unauthorizedResponse} from './auth';
 import {AuthConfigSchema} from "./schema";
 import {BunRequest, BunResponse, BunRouter} from './types';
 
@@ -88,12 +88,6 @@ describe('auth', () => {
           }
         }
       };
-    });
-
-    it('should register auth config on router', () => {
-      registerAuth(mockRouter, config);
-
-      expect((mockRouter as any).authConfig).toEqual(config);
     });
   });
 

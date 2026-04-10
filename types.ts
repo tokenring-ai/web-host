@@ -1,5 +1,7 @@
+import type {MaybePromise} from "bun";
+
 export interface WebResource {
-  register(router: BunRouter): Promise<void>;
+  register(router: BunRouter): MaybePromise<void>;
 }
 
 /**
@@ -11,32 +13,32 @@ export interface BunRouter {
    * Register a GET route handler
    */
   get(path: string, handler: RouteHandler): void;
-  
+
   /**
    * Register a POST route handler
    */
   post(path: string, handler: RouteHandler): void;
-  
+
   /**
    * Register a PUT route handler
    */
   put(path: string, handler: RouteHandler): void;
-  
+
   /**
    * Register a DELETE route handler
    */
   delete(path: string, handler: RouteHandler): void;
-  
+
   /**
    * Register a WebSocket route handler
    */
   ws(path: string, handler: WebSocketHandler): void;
-  
+
   /**
    * Serve static files from a directory
    */
   static(prefix: string, root: string, options?: StaticOptions): void;
-  
+
   /**
    * Set a catch-all handler for unmatched routes
    */
@@ -65,31 +67,33 @@ export interface BunResponse {
    * Send a JSON response
    */
   json(data: any, status?: number): Response;
-  
+
   /**
    * Send a text response
    */
   text(data: string, status?: number): Response;
-  
+
   /**
    * Send a file response
    */
   file(path: string): Promise<Response>;
-  
+
   /**
    * Send HTML response
    */
   html(data: string, status?: number): Response;
-  
+
   /**
    * Send a redirect
    */
   redirect(url: string, status?: number): Response;
-  
+
   /**
    * Create a stream response
    */
-  stream(callback: (controller: ReadableStreamDefaultController) => Promise<void>): Response;
+  stream(
+    callback: (controller: ReadableStreamDefaultController) => Promise<void>,
+  ): Response;
 }
 
 /**
@@ -97,7 +101,7 @@ export interface BunResponse {
  */
 export type RouteHandler = (
   request: BunRequest,
-  response: BunResponse
+  response: BunResponse,
 ) => Promise<Response | void> | Response | void;
 
 /**
@@ -105,7 +109,9 @@ export type RouteHandler = (
  */
 export interface WebSocketHandler {
   open?(ws: BunWebSocket): void;
+
   close?(ws: BunWebSocket): void;
+
   message?(ws: BunWebSocket, message: string | Buffer): void;
 }
 
@@ -114,7 +120,9 @@ export interface WebSocketHandler {
  */
 export interface BunWebSocket {
   send(data: string | object): void;
+
   close(): void;
+
   data: any;
 }
 

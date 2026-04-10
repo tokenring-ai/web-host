@@ -3,7 +3,6 @@ import createTestingApp from "@tokenring-ai/app/test/createTestingApp";
 import {createRPCEndpoint} from '@tokenring-ai/rpc/createRPCEndpoint';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {z} from 'zod';
-import {registerAuth} from './auth';
 import JsonRpcResource from './JsonRpcResource';
 import SPAResource, {spaResourceConfigSchema} from './SPAResource';
 import StaticResource, {staticResourceConfigSchema} from './StaticResource';
@@ -80,34 +79,6 @@ describe('WebHost Integration Tests', () => {
         expect.anything(),
         expect.stringContaining('Web Host listening at')
       );
-    });
-
-    it('should handle complete authentication flow', () => {
-      const config = {
-        host: '127.0.0.1',
-        port: 3000,
-        auth: {
-          users: {
-            user1: { password: 'pass1', bearerToken: 'token1' },
-            user2: { password: 'pass2' },
-            user3: { bearerToken: 'token3' }
-          }
-        }
-      };
-
-      const mockRouter: any = {
-        get: vi.fn(),
-        post: vi.fn(),
-        put: vi.fn(),
-        delete: vi.fn(),
-        ws: vi.fn(),
-        static: vi.fn(),
-        fallback: vi.fn()
-      };
-
-      registerAuth(mockRouter, config.auth);
-
-      expect(mockRouter.authConfig).toEqual(config.auth);
     });
 
     it('should integrate JSON-RPC with complete endpoint', () => {

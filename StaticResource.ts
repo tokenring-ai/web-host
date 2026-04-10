@@ -7,17 +7,18 @@ export const staticResourceConfigSchema = z.object({
   description: z.string(),
   indexFile: z.string(),
   notFoundFile: z.string().optional(),
-  prefix: z.string()
+  prefix: z.string(),
 });
 
 export default class StaticResource implements WebResource {
-  constructor(private config: z.output<typeof staticResourceConfigSchema>) {}
+  constructor(private config: z.output<typeof staticResourceConfigSchema>) {
+  }
 
-  async register(router: BunRouter): Promise<void> {
+  register(router: BunRouter) {
     // Register static file serving
     router.static(this.config.prefix, this.config.root, {
       index: this.config.indexFile,
-      notFound: this.config.notFoundFile
+      notFound: this.config.notFoundFile,
     });
   }
 }
