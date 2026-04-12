@@ -3,7 +3,7 @@ import type {TokenRingService} from "@tokenring-ai/app/types";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import {checkAuth, unauthorizedResponse} from "./auth.ts";
 import type {ParsedWebHostConfig} from "./schema.ts";
-import type {BunRequest, BunResponse, BunRouter, BunWebSocket, RouteHandler, StaticOptions, WebResource, WebSocketHandler,} from "./types.ts";
+import type {BunRequest, BunResponse, BunRouter, BunWebSocket, RouteHandler, StaticOptions, WebResource, WebSocketHandler} from "./types.ts";
 
 /**
  * Router implementation that collects routes and later integrates with Bun.serve

@@ -1,6 +1,6 @@
 import path from "node:path";
 import {z} from "zod";
-import type {BunRequest, BunResponse, BunRouter, WebResource,} from "./types.ts";
+import type {BunRequest, BunResponse, BunRouter, WebResource} from "./types.ts";
 
 export const spaResourceConfigSchema = z.object({
   type: z.literal("spa"),

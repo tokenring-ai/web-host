@@ -2,7 +2,7 @@ import type TokenRingApp from "@tokenring-ai/app";
 import type {RpcEndpoint, RpcMethod} from "@tokenring-ai/rpc/types";
 import pickValue from "@tokenring-ai/utility/object/pickValue";
 import {z} from "zod";
-import type {BunRequest, BunResponse, BunRouter, WebResource,} from "./types.ts";
+import type {BunRequest, BunResponse, BunRouter, WebResource} from "./types.ts";
 
 const jsonBodySchema = z.object({
   jsonrpc: z.string(),
