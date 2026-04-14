@@ -3,11 +3,11 @@ import WebHostService from "../WebHostService.ts";
 
 const inputSchema = {} as const satisfies AgentCommandInputSchema;
 
-async function execute({
+function execute({
                          agent,
-                       }: AgentCommandInputType<typeof inputSchema>): Promise<string> {
+                       }: AgentCommandInputType<typeof inputSchema>) {
   const webHost = agent.requireServiceByType(WebHostService);
-  await webHost.stop();
+  webHost.stop();
   return "Web host stopped";
 }
 
