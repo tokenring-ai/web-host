@@ -90,8 +90,8 @@ export default class WebHostService implements TokenRingService {
   private server: any;
 
   resources = new KeyedRegistry<WebResource>();
-  registerResource = this.resources.register;
-  getResourceEntries = this.resources.entries;
+  registerResource = this.resources.set;
+  getResourceEntries = this.resources.entriesArray;
 
   constructor(
     private app: TokenRingApp,
@@ -110,7 +110,7 @@ export default class WebHostService implements TokenRingService {
     this.router = new Router();
 
     // Register all resources
-    for (const resource of this.resources.getAllItemValues()) {
+    for (const resource of this.resources.valuesArray()) {
       await resource.register(this.router);
     }
 

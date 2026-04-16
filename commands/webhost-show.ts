@@ -16,7 +16,7 @@ function execute({
                  }: AgentCommandInputType<typeof inputSchema>): string {
   const webHost = agent.requireServiceByType(WebHostService);
 
-  const resources = webHost.resources.getAllItemNames();
+  const resources = webHost.resources.keysArray();
 
   const lines: string[] = [`Web host running at: ${webHost.getURL()}`];
 
