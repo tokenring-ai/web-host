@@ -1,22 +1,23 @@
 import z from "zod";
 
-export const AuthConfigSchema = z.object({
+export const WebHostAuthConfigSchema = z.object({
   users: z.record(
     z.string(),
     z.object({
-      password: z.string().optional(),
-      bearerToken: z.string().optional(),
+      password: z.string().exactOptional(),
+      bearerToken: z.string().exactOptional(),
     }),
   ),
 });
-export type ParsedAuthConfig = z.output<typeof AuthConfigSchema>;
+export type WebHostAuthConfig = z.input<typeof WebHostAuthConfigSchema>;
+export type ParsedWebHostAuthConfig = z.output<typeof WebHostAuthConfigSchema>;
 
 export const WebHostConfigSchema = z
   .object({
     autoStart: z.boolean().default(false),
     host: z.string().default("127.0.0.1"),
     port: z.number().default(0),
-    auth: AuthConfigSchema.optional(),
+    auth: WebHostAuthConfigSchema.exactOptional(),
   })
   .prefault({});
 

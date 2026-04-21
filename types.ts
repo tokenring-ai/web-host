@@ -1,4 +1,4 @@
-import type {MaybePromise} from "bun";
+import type { MaybePromise } from "bun";
 
 export interface WebResource {
   register(router: BunRouter): MaybePromise<void>;
@@ -91,18 +91,13 @@ export interface BunResponse {
   /**
    * Create a stream response
    */
-  stream(
-    callback: (controller: ReadableStreamDefaultController) => Promise<void>,
-  ): Response;
+  stream(callback: (controller: ReadableStreamDefaultController) => Promise<void>): Response;
 }
 
 /**
  * Route handler function type
  */
-export type RouteHandler = (
-  request: BunRequest,
-  response: BunResponse,
-) => Promise<Response | void> | Response | void;
+export type RouteHandler = (request: BunRequest, response: BunResponse) => Promise<Response | void> | Response | void;
 
 /**
  * WebSocket handler interface

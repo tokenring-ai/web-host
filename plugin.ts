@@ -1,12 +1,12 @@
-import {AgentCommandService} from "@tokenring-ai/agent";
-import type {TokenRingPlugin} from "@tokenring-ai/app";
-import {RpcService} from "@tokenring-ai/rpc";
+import { AgentCommandService } from "@tokenring-ai/agent";
+import type { TokenRingPlugin } from "@tokenring-ai/app";
+import { RpcService } from "@tokenring-ai/rpc";
 
-import {z} from "zod";
+import { z } from "zod";
 import commands from "./commands.ts";
 import JsonRpcResource from "./JsonRpcResource.ts";
-import packageJSON from "./package.json" with {type: "json"};
-import {WebHostConfigSchema} from "./schema.ts";
+import packageJSON from "./package.json" with { type: "json" };
+import { WebHostConfigSchema } from "./schema.ts";
 import WebHostService from "./WebHostService.ts";
 import WsRpcResource from "./WsRpcResource.ts";
 
@@ -23,7 +23,7 @@ export default {
     const webHostService = new WebHostService(app, config.webHost);
     app.addServices(webHostService);
 
-    app.waitForService(AgentCommandService, (service) => {
+    app.waitForService(AgentCommandService, service => {
       service.addAgentCommands(...commands);
     });
   },
@@ -33,18 +33,9 @@ export default {
 
     if (rpcService) {
       for (const endpoint of rpcService.getAllEndpoints()) {
-        app.serviceOutput(
-          webHostService,
-          `Registering JSON-RPC endpoint: ${endpoint.path}`,
-        );
-        webHostService.registerResource(
-          endpoint.name,
-          new JsonRpcResource(app, endpoint),
-        );
-        webHostService.registerResource(
-          `${endpoint.name} (WS)`,
-          new WsRpcResource(app, endpoint),
-        );
+        app.serviceOutput(webHostService, `Registering JSON-RPC endpoint: ${endpoint.path}`);
+        webHostService.registerResource(endpoint.name, new JsonRpcResource(app, endpoint));
+        webHostService.registerResource(`${endpoint.name} (WS)`, new WsRpcResource(app, endpoint));
       }
     }
     if (config.webHost.autoStart) {

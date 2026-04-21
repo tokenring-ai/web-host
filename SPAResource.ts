@@ -1,6 +1,6 @@
 import path from "node:path";
-import {z} from "zod";
-import type {BunRequest, BunResponse, BunRouter, WebResource} from "./types.ts";
+import { z } from "zod";
+import type { BunRequest, BunResponse, BunRouter, WebResource } from "./types.ts";
 
 export const spaResourceConfigSchema = z.object({
   type: z.literal("spa"),
@@ -10,8 +10,7 @@ export const spaResourceConfigSchema = z.object({
 });
 
 export default class SPAResource implements WebResource {
-  constructor(public config: z.output<typeof spaResourceConfigSchema>) {
-  }
+  constructor(public config: z.output<typeof spaResourceConfigSchema>) {}
 
   register(router: BunRouter) {
     const root = path.dirname(this.config.file);
@@ -20,20 +19,14 @@ export default class SPAResource implements WebResource {
     router.static(this.config.prefix, root);
 
     // Handle the root path (both with and without trailing slash)
-    router.get(
-      this.config.prefix,
-      async (_request: BunRequest, response: BunResponse) => {
-        return await response.file(this.config.file);
-      },
-    );
+    router.get(this.config.prefix, async (_request: BunRequest, response: BunResponse) => {
+      return await response.file(this.config.file);
+    });
 
     // Handle root path with trailing slash
-    router.get(
-      this.config.prefix + "/",
-      async (_request: BunRequest, response: BunResponse) => {
-        return await response.file(this.config.file);
-      },
-    );
+    router.get(this.config.prefix + "/", async (_request: BunRequest, response: BunResponse) => {
+      return await response.file(this.config.file);
+    });
 
     // Set a catch-all handler for SPA client-side routing
     router.fallback(async (request: BunRequest, response: BunResponse) => {

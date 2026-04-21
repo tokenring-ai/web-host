@@ -1,14 +1,11 @@
-import type {ParsedAuthConfig} from "./schema.ts";
-import type {BunRequest, BunResponse} from "./types.ts";
+import type { ParsedWebHostAuthConfig } from "./schema.ts";
+import type { BunRequest, BunResponse } from "./types.ts";
 
 /**
  * Check authentication for a request
  * Returns the authenticated username or null if auth fails
  */
-export function checkAuth(
-  request: BunRequest,
-  config: ParsedAuthConfig,
-): string | null {
+export function checkAuth(request: BunRequest, config: ParsedWebHostAuthConfig): string | null {
   const auth = request.headers.get("authorization");
 
   if (!auth) {
@@ -41,5 +38,5 @@ export function checkAuth(
  * Create unauthorized response
  */
 export function unauthorizedResponse(response: BunResponse): Response {
-  return response.json({error: "Unauthorized"}, 401);
+  return response.json({ error: "Unauthorized" }, 401);
 }

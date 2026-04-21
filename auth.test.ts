@@ -1,6 +1,6 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {checkAuth, unauthorizedResponse} from './auth';
-import {AuthConfigSchema} from "./schema";
+import {WebHostAuthConfigSchema} from "./schema";
 import {BunRequest, BunResponse, BunRouter} from './types';
 
 describe('auth', () => {
@@ -47,7 +47,7 @@ describe('auth', () => {
         }
       };
 
-      const result = AuthConfigSchema.parse(validConfig);
+      const result = WebHostAuthConfigSchema.parse(validConfig);
       expect(result).toEqual(validConfig);
     });
 
@@ -60,13 +60,13 @@ describe('auth', () => {
         }
       };
 
-      expect(() => AuthConfigSchema.parse(invalidConfig)).toThrow();
+      expect(() => WebHostAuthConfigSchema.parse(invalidConfig)).toThrow();
     });
 
     it('should require users field', () => {
       const incompleteConfig = {};
 
-      expect(() => AuthConfigSchema.parse(incompleteConfig)).toThrow();
+      expect(() => WebHostAuthConfigSchema.parse(incompleteConfig)).toThrow();
     });
   });
 

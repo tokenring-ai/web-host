@@ -1,9 +1,10 @@
 import type TokenRingApp from "@tokenring-ai/app";
-import type {TokenRingService} from "@tokenring-ai/app/types";
+import type { TokenRingService } from "@tokenring-ai/app/types";
+import { stripUndefinedKeys } from "@tokenring-ai/utility/object/stripObject";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
-import {checkAuth, unauthorizedResponse} from "./auth.ts";
-import type {ParsedWebHostConfig} from "./schema.ts";
-import type {BunRequest, BunResponse, BunRouter, BunWebSocket, RouteHandler, StaticOptions, WebResource, WebSocketHandler} from "./types.ts";
+import { checkAuth, unauthorizedResponse } from "./auth.ts";
+import type { ParsedWebHostConfig } from "./schema.ts";
+import type { BunRequest, BunResponse, BunRouter, BunWebSocket, RouteHandler, StaticOptions, WebResource, WebSocketHandler } from "./types.ts";
 
 /**
  * Router implementation that collects routes and later integrates with Bun.serve
@@ -39,7 +40,7 @@ class Router implements BunRouter {
   }
 
   static(prefix: string, root: string, options?: StaticOptions): void {
-    this.staticRoutes.push({prefix, root, options});
+    this.staticRoutes.push(stripUndefinedKeys({ prefix, root, options }));
   }
 
   fallback(handler: RouteHandler): void {
@@ -96,8 +97,7 @@ export default class WebHostService implements TokenRingService {
   constructor(
     private app: TokenRingApp,
     private config: ParsedWebHostConfig,
-  ) {
-  }
+  ) {}
 
   get listening() {
     return !!this.server;
@@ -166,18 +166,12 @@ export default class WebHostService implements TokenRingService {
     const fallback = this.router.getFallback();
     const authConfig = this.config.auth;
 
-    return async (
-      request: Request,
-      server: any,
-    ): Promise<Response | undefined> => {
+    return async (request: Request, server: any): Promise<Response | undefined> => {
       const url = new URL(request.url);
       const path = url.pathname;
 
       // Check if this is a WebSocket upgrade request
-      if (
-        wsRoutes.has(path) &&
-        request.headers.get("upgrade") === "websocket"
-      ) {
+      if (wsRoutes.has(path) && request.headers.get("upgrade") === "websocket") {
         // Check auth if configured
         if (authConfig) {
           const bunRequest = this.wrapRequest(request);
@@ -198,7 +192,7 @@ export default class WebHostService implements TokenRingService {
 
         // If upgrade fails, return error
         if (!success) {
-          return new Response("WebSocket upgrade failed", {status: 400});
+          return new Response("WebSocket upgrade failed", { status: 400 });
         }
 
         // Return undefined to indicate WebSocket upgrade
@@ -220,7 +214,7 @@ export default class WebHostService implements TokenRingService {
       }
 
       // Try static file routes first
-      for (const {prefix, root, options} of staticRoutes) {
+      for (const { prefix, root, options } of staticRoutes) {
         if (path.startsWith(prefix)) {
           let filePath = path.slice(prefix.length);
 
@@ -259,7 +253,7 @@ export default class WebHostService implements TokenRingService {
       }
 
       // 404 Not Found
-      return new Response("Not Found", {status: 404});
+      return new Response("Not Found", { status: 404 });
     };
   }
 
@@ -273,8 +267,7 @@ export default class WebHostService implements TokenRingService {
           // Create wrapper with send method
           const wsWrapper: BunWebSocket = {
             send: (data: string | object) => {
-              const message =
-                typeof data === "string" ? data : JSON.stringify(data);
+              const message = typeof data === "string" ? data : JSON.stringify(data);
               ws.send(message);
             },
             close: () => ws.close(),
@@ -289,8 +282,7 @@ export default class WebHostService implements TokenRingService {
         if (handler?.close) {
           const wsWrapper: BunWebSocket = {
             send: (data: string | object) => {
-              const message =
-                typeof data === "string" ? data : JSON.stringify(data);
+              const message = typeof data === "string" ? data : JSON.stringify(data);
               ws.send(message);
             },
             close: () => ws.close(),
@@ -305,8 +297,7 @@ export default class WebHostService implements TokenRingService {
         if (handler?.message) {
           const wsWrapper: BunWebSocket = {
             send: (data: string | object) => {
-              const msg =
-                typeof data === "string" ? data : JSON.stringify(data);
+              const msg = typeof data === "string" ? data : JSON.stringify(data);
               ws.send(msg);
             },
             close: () => ws.close(),
@@ -336,13 +327,13 @@ export default class WebHostService implements TokenRingService {
       json: (data: any, status = 200) => {
         return new Response(JSON.stringify(data), {
           status,
-          headers: {"Content-Type": "application/json"},
+          headers: { "Content-Type": "application/json" },
         });
       },
       text: (data: string, status = 200) => {
         return new Response(data, {
           status,
-          headers: {"Content-Type": "text/plain"},
+          headers: { "Content-Type": "text/plain" },
         });
       },
       file: (path: string) => {
@@ -352,20 +343,16 @@ export default class WebHostService implements TokenRingService {
       html: (data: string, status = 200) => {
         return new Response(data, {
           status,
-          headers: {"Content-Type": "text/html"},
+          headers: { "Content-Type": "text/html" },
         });
       },
       redirect: (url: string, status = 302) => {
         return new Response(null, {
           status,
-          headers: {Location: url},
+          headers: { Location: url },
         });
       },
-      stream: (
-        callback: (
-          controller: ReadableStreamDefaultController,
-        ) => Promise<void>,
-      ) => {
+      stream: (callback: (controller: ReadableStreamDefaultController) => Promise<void>) => {
         const stream = new ReadableStream({
           start: callback,
         });
