@@ -53,10 +53,10 @@ export interface BunRequest {
   url: string;
   path: string;
   headers: Headers;
-  body: () => Promise<any>;
-  json: () => Promise<any>;
-  text: () => Promise<string>;
-  arrayBuffer: () => Promise<ArrayBuffer>;
+  body: () => MaybePromise<any>;
+  json: () => MaybePromise<any>;
+  text: () => MaybePromise<string>;
+  arrayBuffer: () => MaybePromise<ArrayBuffer>;
 }
 
 /**
@@ -76,7 +76,7 @@ export interface BunResponse {
   /**
    * Send a file response
    */
-  file(path: string): Promise<Response>;
+  file(path: string): MaybePromise<Response>;
 
   /**
    * Send HTML response
@@ -91,13 +91,13 @@ export interface BunResponse {
   /**
    * Create a stream response
    */
-  stream(callback: (controller: ReadableStreamDefaultController) => Promise<void>): Response;
+  stream(callback: (controller: ReadableStreamDefaultController) => MaybePromise<void>): Response;
 }
 
 /**
  * Route handler function type
  */
-export type RouteHandler = (request: BunRequest, response: BunResponse) => Promise<Response | void> | Response | void;
+export type RouteHandler = (request: BunRequest, response: BunResponse) => MaybePromise<Response | void>;
 
 /**
  * WebSocket handler interface

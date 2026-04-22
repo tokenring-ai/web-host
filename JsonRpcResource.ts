@@ -1,5 +1,6 @@
 import type TokenRingApp from "@tokenring-ai/app";
 import type { RpcEndpoint, RpcMethod } from "@tokenring-ai/rpc/types";
+import errorAsString from "@tokenring-ai/utility/error/errorAsString";
 import pickValue from "@tokenring-ai/utility/object/pickValue";
 import { z } from "zod";
 import type { BunRequest, BunResponse, BunRouter, WebResource } from "./types.ts";
@@ -55,18 +56,18 @@ export default class JsonRpcResource implements WebResource {
             id,
             result: validatedResult,
           });
-        } catch (error: any) {
+        } catch (error) {
           return response.json({
             jsonrpc: "2.0",
             id,
-            error: { code: -32603, message: error.message },
+            error: { code: -32603, message: errorAsString(error) },
           });
         }
-      } catch (error: any) {
+      } catch (error) {
         return response.json({
           jsonrpc: "2.0",
           id: null,
-          error: { code: -32700, message: error.message },
+          error: { code: -32700, message: errorAsString(error) },
         });
       }
     });
@@ -83,9 +84,9 @@ export default class JsonRpcResource implements WebResource {
           controller.enqueue(new TextEncoder().encode(data));
         }
         controller.close();
-      } catch (error: any) {
+      } catch (error) {
         abortController.abort();
-        const data = `data: ${JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32603, message: error.message } })}\n\n`;
+        const data = `data: ${JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32603, message: errorAsString(error) } })}\n\n`;
         controller.enqueue(new TextEncoder().encode(data));
         controller.close();
       }

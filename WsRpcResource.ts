@@ -1,5 +1,6 @@
 import type TokenRingApp from "@tokenring-ai/app";
 import type { RpcEndpoint, RpcMethod } from "@tokenring-ai/rpc/types";
+import errorAsString from "@tokenring-ai/utility/error/errorAsString";
 import pickValue from "@tokenring-ai/utility/object/pickValue";
 import { z } from "zod";
 import type { BunRouter, BunWebSocket, WebResource } from "./types.ts";
@@ -78,12 +79,12 @@ export default class WsRpcResource implements WebResource {
                   stream: "end",
                 }),
               );
-            } catch (error: any) {
+            } catch (error) {
               ws.send(
                 JSON.stringify({
                   jsonrpc: "2.0",
                   id,
-                  error: { code: -32603, message: error.message },
+                  error: { code: -32603, message: errorAsString(error) },
                 }),
               );
               ws.close();
@@ -94,12 +95,12 @@ export default class WsRpcResource implements WebResource {
           const result = await (handler as RpcMethod<any, any, "query" | "mutation">).execute(validatedParams, this.app);
           const validatedResult = handler.resultSchema.parse(result);
           ws.send(JSON.stringify({ jsonrpc: "2.0", id, result: validatedResult }));
-        } catch (error: any) {
+        } catch (error) {
           ws.send(
             JSON.stringify({
               jsonrpc: "2.0",
               id: requestId,
-              error: { code: -32603, message: error.message },
+              error: { code: -32603, message: errorAsString(error) },
             }),
           );
         }
