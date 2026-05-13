@@ -114,11 +114,11 @@ export interface WebSocketHandler {
  * WebSocket wrapper interface
  */
 export interface BunWebSocket {
+  data: any;
+
   send(data: string | object): void;
 
   close(): void;
-
-  data: any;
 }
 
 /**

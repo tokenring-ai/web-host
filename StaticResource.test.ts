@@ -1,8 +1,8 @@
-import {beforeEach, describe, expect, it, vi} from 'vitest';
-import StaticResource, {staticResourceConfigSchema} from './StaticResource';
-import {BunRouter} from './types';
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import StaticResource, { staticResourceConfigSchema } from "./StaticResource";
+import { BunRouter } from "./types";
 
-describe('StaticResource', () => {
+describe("StaticResource", () => {
   let mockRouter: BunRouter;
   let resource: StaticResource;
 
@@ -18,15 +18,15 @@ describe('StaticResource', () => {
     };
   });
 
-  describe('constructor', () => {
-    it('should create instance with valid config', () => {
+  describe("constructor", () => {
+    it("should create instance with valid config", () => {
       const config = {
-        type: 'static' as const,
-        root: '/path/to/static',
-        description: 'Static files',
-        indexFile: 'index.html',
-        notFoundFile: '404.html',
-        prefix: '/static'
+        type: "static" as const,
+        root: "/path/to/static",
+        description: "Static files",
+        indexFile: "index.html",
+        notFoundFile: "404.html",
+        prefix: "/static"
       };
 
       const resource = new StaticResource(config);
@@ -34,86 +34,86 @@ describe('StaticResource', () => {
     });
   });
 
-  describe('register method', () => {
-    it('should register static file serving', async () => {
+  describe("register method", () => {
+    it("should register static file serving", async () => {
       const config = {
-        type: 'static' as const,
-        root: '/path/to/static',
-        description: 'Static files',
-        indexFile: 'index.html',
-        notFoundFile: '404.html',
-        prefix: '/static'
+        type: "static" as const,
+        root: "/path/to/static",
+        description: "Static files",
+        indexFile: "index.html",
+        notFoundFile: "404.html",
+        prefix: "/static"
       };
 
       const resource = new StaticResource(config);
       await resource.register(mockRouter);
 
       expect(mockRouter.static).toHaveBeenCalledWith(
-        '/static',
-        '/path/to/static',
+        "/static",
+        "/path/to/static",
         {
-          index: 'index.html',
-          notFound: '404.html'
+          index: "index.html",
+          notFound: "404.html"
         }
       );
     });
 
-    it('should register without not found handler when notFoundFile is not provided', async () => {
+    it("should register without not found handler when notFoundFile is not provided", async () => {
       const config = {
-        type: 'static' as const,
-        root: '/path/to/static',
-        description: 'Static files',
-        indexFile: 'index.html',
-        prefix: '/static'
+        type: "static" as const,
+        root: "/path/to/static",
+        description: "Static files",
+        indexFile: "index.html",
+        prefix: "/static"
       };
 
       const resource = new StaticResource(config);
       await resource.register(mockRouter);
 
       expect(mockRouter.static).toHaveBeenCalledWith(
-        '/static',
-        '/path/to/static',
+        "/static",
+        "/path/to/static",
         {
-          index: 'index.html',
+          index: "index.html",
           notFound: undefined
         }
       );
     });
   });
 
-  describe('staticResourceConfigSchema', () => {
-    it('should validate valid config', () => {
+  describe("staticResourceConfigSchema", () => {
+    it("should validate valid config", () => {
       const validConfig = {
-        type: 'static',
-        root: '/path/to/static',
-        description: 'Static files',
-        indexFile: 'index.html',
-        notFoundFile: '404.html',
-        prefix: '/static'
+        type: "static",
+        root: "/path/to/static",
+        description: "Static files",
+        indexFile: "index.html",
+        notFoundFile: "404.html",
+        prefix: "/static"
       };
 
       const result = staticResourceConfigSchema.parse(validConfig);
       expect(result).toEqual(validConfig);
     });
 
-    it('should reject invalid config', () => {
+    it("should reject invalid config", () => {
       const invalidConfig = {
-        type: 'invalid',
-        root: '/path/to/static',
-        description: 'Static files',
-        indexFile: 'index.html',
-        prefix: '/static'
+        type: "invalid",
+        root: "/path/to/static",
+        description: "Static files",
+        indexFile: "index.html",
+        prefix: "/static"
       };
 
       expect(() => staticResourceConfigSchema.parse(invalidConfig)).toThrow();
     });
 
-    it('should require all required fields', () => {
+    it("should require all required fields", () => {
       const partialConfig = {
-        root: '/path/to/static',
-        description: 'Static files',
-        indexFile: 'index.html',
-        prefix: '/static'
+        root: "/path/to/static",
+        description: "Static files",
+        indexFile: "index.html",
+        prefix: "/static"
       };
 
       expect(() => staticResourceConfigSchema.parse(partialConfig)).toThrow();

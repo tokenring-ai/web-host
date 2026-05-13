@@ -1,9 +1,9 @@
-import {beforeEach, describe, expect, it, vi} from 'vitest';
-import {checkAuth, unauthorizedResponse} from './auth';
-import {WebHostAuthConfigSchema} from "./schema";
-import {BunRequest, BunResponse, BunRouter} from './types';
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { checkAuth, unauthorizedResponse } from "./auth";
+import { WebHostAuthConfigSchema } from "./schema";
+import { BunRequest, BunResponse, BunRouter } from "./types";
 
-describe('auth', () => {
+describe("auth", () => {
   let mockRouter: BunRouter;
   let mockRequest: Partial<BunRequest>;
   let mockResponse: Partial<BunResponse>;
@@ -18,31 +18,31 @@ describe('auth', () => {
       static: vi.fn(),
       fallback: vi.fn()
     };
-    
+
     mockRequest = {
       headers: new Headers()
     };
-    
+
     mockResponse = {
       json: vi.fn((data, status = 200) => {
         return new Response(JSON.stringify(data), {
           status,
-          headers: {"Content-Type": "application/json"}
+          headers: { "Content-Type": "application/json" }
         });
       })
     };
   });
 
-  describe('AuthConfigSchema', () => {
-    it('should validate valid config', () => {
+  describe("AuthConfigSchema", () => {
+    it("should validate valid config", () => {
       const validConfig = {
         users: {
           user1: {
-            password: 'password1',
-            bearerToken: 'token1'
+            password: "password1",
+            bearerToken: "token1"
           },
           user2: {
-            password: 'password2'
+            password: "password2"
           }
         }
       };
@@ -51,7 +51,7 @@ describe('auth', () => {
       expect(result).toEqual(validConfig);
     });
 
-    it('should reject invalid config', () => {
+    it("should reject invalid config", () => {
       const invalidConfig = {
         users: {
           user1: {
@@ -63,167 +63,167 @@ describe('auth', () => {
       expect(() => WebHostAuthConfigSchema.parse(invalidConfig)).toThrow();
     });
 
-    it('should require users field', () => {
+    it("should require users field", () => {
       const incompleteConfig = {};
 
       expect(() => WebHostAuthConfigSchema.parse(incompleteConfig)).toThrow();
     });
   });
 
-  describe('registerAuth', () => {
+  describe("registerAuth", () => {
     let config: any;
 
     beforeEach(() => {
       config = {
         users: {
           user1: {
-            password: 'password1',
-            bearerToken: 'token1'
+            password: "password1",
+            bearerToken: "token1"
           },
           user2: {
-            password: 'password2'
+            password: "password2"
           },
           user3: {
-            bearerToken: 'token3'
+            bearerToken: "token3"
           }
         }
       };
     });
   });
 
-  describe('checkAuth', () => {
+  describe("checkAuth", () => {
     let config: any;
 
     beforeEach(() => {
       config = {
         users: {
           user1: {
-            password: 'password1',
-            bearerToken: 'token1'
+            password: "password1",
+            bearerToken: "token1"
           },
           user2: {
-            password: 'password2'
+            password: "password2"
           },
           user3: {
-            bearerToken: 'token3'
+            bearerToken: "token3"
           }
         }
       };
     });
 
-    it('should reject request without authorization header', () => {
+    it("should reject request without authorization header", () => {
       const result = checkAuth(mockRequest as BunRequest, config);
       expect(result).toBeNull();
     });
 
-    it('should accept valid bearer token', () => {
+    it("should accept valid bearer token", () => {
       mockRequest.headers = new Headers({
-        'authorization': 'Bearer token1'
+        "authorization": "Bearer token1"
       });
-      
+
       const result = checkAuth(mockRequest as BunRequest, config);
-      expect(result).toBe('user1');
+      expect(result).toBe("user1");
     });
 
-    it('should reject invalid bearer token', () => {
+    it("should reject invalid bearer token", () => {
       mockRequest.headers = new Headers({
-        'authorization': 'Bearer invalid_token'
+        "authorization": "Bearer invalid_token"
       });
-      
-      const result = checkAuth(mockRequest as BunRequest, config);
-      expect(result).toBeNull();
-    });
 
-    it('should accept valid basic auth credentials', () => {
-      const encoded = Buffer.from('user1:password1').toString('base64');
-      mockRequest.headers = new Headers({
-        'authorization': `Basic ${encoded}`
-      });
-      
-      const result = checkAuth(mockRequest as BunRequest, config);
-      expect(result).toBe('user1');
-    });
-
-    it('should reject invalid basic auth credentials', () => {
-      const encoded = Buffer.from('user1:wrongpassword').toString('base64');
-      mockRequest.headers = new Headers({
-        'authorization': `Basic ${encoded}`
-      });
-      
       const result = checkAuth(mockRequest as BunRequest, config);
       expect(result).toBeNull();
     });
 
-    it('should reject malformed basic auth', () => {
-      const encoded = Buffer.from('malformed').toString('base64');
+    it("should accept valid basic auth credentials", () => {
+      const encoded = Buffer.from("user1:password1").toString("base64");
       mockRequest.headers = new Headers({
-        'authorization': `Basic ${encoded}`
+        "authorization": `Basic ${encoded}`
       });
-      
+
+      const result = checkAuth(mockRequest as BunRequest, config);
+      expect(result).toBe("user1");
+    });
+
+    it("should reject invalid basic auth credentials", () => {
+      const encoded = Buffer.from("user1:wrongpassword").toString("base64");
+      mockRequest.headers = new Headers({
+        "authorization": `Basic ${encoded}`
+      });
+
       const result = checkAuth(mockRequest as BunRequest, config);
       expect(result).toBeNull();
     });
 
-    it('should reject basic auth with missing password', () => {
-      const encoded = Buffer.from('user1').toString('base64');
+    it("should reject malformed basic auth", () => {
+      const encoded = Buffer.from("malformed").toString("base64");
       mockRequest.headers = new Headers({
-        'authorization': `Basic ${encoded}`
+        "authorization": `Basic ${encoded}`
       });
-      
+
       const result = checkAuth(mockRequest as BunRequest, config);
       expect(result).toBeNull();
     });
 
-    it('should handle user with only bearer token', () => {
+    it("should reject basic auth with missing password", () => {
+      const encoded = Buffer.from("user1").toString("base64");
       mockRequest.headers = new Headers({
-        'authorization': 'Bearer token3'
+        "authorization": `Basic ${encoded}`
       });
-      
+
       const result = checkAuth(mockRequest as BunRequest, config);
-      expect(result).toBe('user3');
+      expect(result).toBeNull();
     });
 
-    it('should handle user with only password', () => {
-      const encoded = Buffer.from('user2:password2').toString('base64');
+    it("should handle user with only bearer token", () => {
       mockRequest.headers = new Headers({
-        'authorization': `Basic ${encoded}`
+        "authorization": "Bearer token3"
       });
-      
+
       const result = checkAuth(mockRequest as BunRequest, config);
-      expect(result).toBe('user2');
+      expect(result).toBe("user3");
     });
 
-    it('should reject bearer token for user without token', () => {
+    it("should handle user with only password", () => {
+      const encoded = Buffer.from("user2:password2").toString("base64");
       mockRequest.headers = new Headers({
-        'authorization': 'Bearer token1'
+        "authorization": `Basic ${encoded}`
       });
-      
+
+      const result = checkAuth(mockRequest as BunRequest, config);
+      expect(result).toBe("user2");
+    });
+
+    it("should reject bearer token for user without token", () => {
+      mockRequest.headers = new Headers({
+        "authorization": "Bearer token1"
+      });
+
       const configWithoutToken = {
         users: {
-          user1: { password: 'password1' }
+          user1: { password: "password1" }
         }
       };
-      
+
       const result = checkAuth(mockRequest as BunRequest, configWithoutToken);
       expect(result).toBeNull();
     });
 
-    it('should handle case sensitivity in authorization header', () => {
+    it("should handle case sensitivity in authorization header", () => {
       mockRequest.headers = new Headers({
-        'authorization': 'bearer token1'
+        "authorization": "bearer token1"
       });
-      
+
       const result = checkAuth(mockRequest as BunRequest, config);
       expect(result).toBeNull();
     });
   });
 
-  describe('unauthorizedResponse', () => {
-    it('should return 401 response', () => {
+  describe("unauthorizedResponse", () => {
+    it("should return 401 response", () => {
       const response = unauthorizedResponse(mockResponse as BunResponse);
-      
+
       expect(mockResponse.json).toHaveBeenCalledWith(
-        {error: "Unauthorized"},
+        { error: "Unauthorized" },
         401
       );
     });

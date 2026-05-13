@@ -47,13 +47,6 @@ class Router implements BunRouter {
     this.fallbackHandler = handler;
   }
 
-  private addRoute(method: string, path: string, handler: RouteHandler): void {
-    if (!this.routes.has(path)) {
-      this.routes.set(path, new Map());
-    }
-    this.routes.get(path)!.set(method, handler);
-  }
-
   /**
    * Get all registered routes for Bun.serve
    */
@@ -81,18 +74,23 @@ class Router implements BunRouter {
   getFallback() {
     return this.fallbackHandler;
   }
+
+  private addRoute(method: string, path: string, handler: RouteHandler): void {
+    if (!this.routes.has(path)) {
+      this.routes.set(path, new Map());
+    }
+    this.routes.get(path)!.set(method, handler);
+  }
 }
 
 export default class WebHostService implements TokenRingService {
   readonly name = "WebHostService";
   description = "Bun web host for serving resources and APIs";
-
-  private router = new Router();
-  private server: any;
-
   resources = new KeyedRegistry<WebResource>();
   registerResource = this.resources.set;
   getResourceEntries = this.resources.entriesArray;
+  private router = new Router();
+  private server: any;
 
   constructor(
     private app: TokenRingApp,
