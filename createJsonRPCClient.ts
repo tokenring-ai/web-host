@@ -81,7 +81,7 @@ function createJsonRPCStream<T extends RPCSchema, K extends keyof T["methods"]>(
             try {
               yield JSON.parse(event.substring(5)).result as ResultOfRPCCall<T, K>;
             } catch (parseError) {
-              throw new Error(`Failed to parse stream data: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+              throw new Error(`Failed to parse stream data: ${Error.isError(parseError) ? parseError.message : String(parseError)}`);
             }
           }
         }
