@@ -4,7 +4,6 @@ import { RpcService } from "@tokenring-ai/rpc";
 
 import { z } from "zod";
 import commands from "./commands.ts";
-import JsonRpcResource from "./JsonRpcResource.ts";
 import packageJSON from "./package.json" with { type: "json" };
 import { WebHostConfigSchema } from "./schema.ts";
 import WebHostService from "./WebHostService.ts";
@@ -32,11 +31,7 @@ export default {
     const rpcService = app.getService(RpcService);
 
     if (rpcService) {
-      for (const endpoint of rpcService.getAllEndpoints()) {
-        app.serviceOutput(webHostService, `Registering JSON-RPC endpoint: ${endpoint.path}`);
-        webHostService.registerResource(endpoint.name, new JsonRpcResource(app, endpoint));
-        webHostService.registerResource(`${endpoint.name} (WS)`, new WsRpcResource(app, endpoint));
-      }
+      webHostService.registerResource(`Websocket RPC`, new WsRpcResource(app, "/rpc:ws"));
     }
     if (config.webHost.autoStart) {
       await webHostService.listen();

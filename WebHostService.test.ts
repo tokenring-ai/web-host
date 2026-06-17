@@ -64,7 +64,7 @@ describe("WebHostService", () => {
     it("should start server and log URL", async () => {
       const abortController = new AbortController();
 
-      await service.start(abortController.signal);
+      await service.listen;
 
       expect(mockApp.serviceOutput).toHaveBeenCalledWith(
         expect.anything(),
@@ -80,7 +80,7 @@ describe("WebHostService", () => {
       service.registerResource("test", mockResource);
 
       const abortController = new AbortController();
-      await service.start(abortController.signal);
+      await service.listen;
 
       expect(mockResource.register).toHaveBeenCalled();
     });
@@ -98,7 +98,7 @@ describe("WebHostService", () => {
       const serviceWithAuth = new WebHostService(mockApp, configWithAuth);
 
       const abortController = new AbortController();
-      await serviceWithAuth.start(abortController.signal);
+      await serviceWithAuth.listen;
 
       // Should not throw
       expect(true).toBe(true);
@@ -108,7 +108,7 @@ describe("WebHostService", () => {
   describe("stop method", () => {
     it("should stop the server", async () => {
       const abortController = new AbortController();
-      await service.start(abortController.signal);
+      await service.listen;
 
       await service.stop();
 
@@ -119,7 +119,7 @@ describe("WebHostService", () => {
   describe("getURL method", () => {
     it("should return URL when server is started", async () => {
       const abortController = new AbortController();
-      await service.start(abortController.signal);
+      await service.listen;
 
       const url = service.getURL();
       expect(url.toString()).toBe("http://127.0.0.1:3000/");

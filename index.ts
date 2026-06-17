@@ -1,6 +1,4 @@
-export { default as createJsonRPCClient } from "./createJsonRPCClient.ts";
 export { default as createWsRPCClient } from "./createWsRPCClient.ts";
-export { default as JsonRpcResource } from "./JsonRpcResource.ts";
 export {
   default as SPAResource,
   spaResourceConfigSchema,

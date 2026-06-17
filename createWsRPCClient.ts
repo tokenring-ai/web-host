@@ -2,42 +2,60 @@ import type { FunctionTypeOfRPCCall, RPCSchema } from "@tokenring-ai/rpc/types";
 
 let rpcId = 0;
 
-export default function createWsRPCClient<T extends RPCSchema>(baseURL: URL, schemas: T) {
-  const wsUrl = new URL(schemas.path, baseURL);
-  wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
+type PendingRequest = { resolve: (value: any) => void; reject: (reason?: any) => void };
+type StreamHandler = {
+  enqueue: (val: any) => void;
+  close: () => void;
+  error: (err: Error) => void;
+};
 
-  const socket = new WebSocket(wsUrl.toString());
-  const pendingRequests = new Map<number, { resolve: (value: any) => void; reject: (reason?: any) => void }>();
+type SocketEntry = {
+  socket: WebSocket;
+  pendingRequests: Map<number, PendingRequest>;
+  pendingStreams: Map<number, StreamHandler>;
+};
 
-  type StreamHandler = {
-    enqueue: (val: any) => void;
-    close: () => void;
-    error: (err: Error) => void;
-  };
-  const pendingStreams = new Map<number, StreamHandler>();
+const socketCache = new Map<string, SocketEntry>();
 
-  socket.onmessage = event => {
-    const data = JSON.parse(event.data);
-    const { id, result, error, stream } = data;
+export default function createWsRPCClient<T extends RPCSchema>(wsUrl: URL, schemas: T) {
+  const urlKey = wsUrl.toString();
 
-    if (pendingRequests.has(id)) {
-      const { resolve, reject } = pendingRequests.get(id)!;
-      pendingRequests.delete(id);
-      if (error) reject(new Error(error.message));
-      else resolve(result);
-    } else if (pendingStreams.has(id)) {
-      const handler = pendingStreams.get(id)!;
-      if (error) {
-        handler.error(new Error(error.message));
-        pendingStreams.delete(id);
-      } else if (stream === "end") {
-        handler.close();
-        pendingStreams.delete(id);
-      } else {
-        handler.enqueue(result);
+  let entry = socketCache.get(urlKey);
+  if (!entry || entry.socket.readyState === WebSocket.CLOSED || entry.socket.readyState === WebSocket.CLOSING) {
+    const socket = new WebSocket(wsUrl);
+    const pendingRequests = new Map<number, PendingRequest>();
+    const pendingStreams = new Map<number, StreamHandler>();
+
+    socket.onmessage = event => {
+      const data = JSON.parse(event.data);
+      const { id, result, error, stream } = data;
+
+      if (pendingRequests.has(id)) {
+        const { resolve, reject } = pendingRequests.get(id)!;
+        pendingRequests.delete(id);
+        if (error) reject(new Error(error.message));
+        else resolve(result);
+      } else if (pendingStreams.has(id)) {
+        const handler = pendingStreams.get(id)!;
+        if (error) {
+          handler.error(new Error(error.message));
+          pendingStreams.delete(id);
+        } else if (stream === "end") {
+          handler.close();
+          pendingStreams.delete(id);
+        } else {
+          handler.enqueue(result);
+        }
       }
-    }
-  };
+    };
+
+    socket.addEventListener("close", () => socketCache.delete(urlKey), { once: true });
+
+    entry = { socket, pendingRequests, pendingStreams };
+    socketCache.set(urlKey, entry);
+  }
+
+  const { socket, pendingRequests, pendingStreams } = entry;
 
   const ensureOpen = () =>
     new Promise<void>((resolve, reject): void => {
@@ -54,9 +72,9 @@ export default function createWsRPCClient<T extends RPCSchema>(baseURL: URL, sch
     });
 
   return Object.fromEntries(
-    Object.keys(schemas.methods).map(name => [
-      name,
-      schemas.methods[name].type === "stream"
+    Object.entries(schemas.methods).map(([methodName, method]) => [
+      methodName,
+      method.type === "stream"
         ? async function* (params: any, signal: AbortSignal) {
             await ensureOpen();
             const id = ++rpcId;
@@ -97,7 +115,7 @@ export default function createWsRPCClient<T extends RPCSchema>(baseURL: URL, sch
               JSON.stringify({
                 jsonrpc: "2.0",
                 id,
-                method: name,
+                method: `${schemas.path}.${methodName}`,
                 params,
               }),
             );
@@ -139,7 +157,7 @@ export default function createWsRPCClient<T extends RPCSchema>(baseURL: URL, sch
                 JSON.stringify({
                   jsonrpc: "2.0",
                   id,
-                  method: name,
+                  method: `${schemas.path}.${methodName}`,
                   params,
                 }),
               );

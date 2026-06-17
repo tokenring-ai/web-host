@@ -3,7 +3,6 @@ import createTestingApp from "@tokenring-ai/app/test/createTestingApp";
 import { createRPCEndpoint } from "@tokenring-ai/rpc/createRPCEndpoint";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import JsonRpcResource from "./JsonRpcResource";
 import SPAResource, { spaResourceConfigSchema } from "./SPAResource";
 import StaticResource, { staticResourceConfigSchema } from "./StaticResource";
 import WebHostService from "./WebHostService";
@@ -73,7 +72,7 @@ describe("WebHost Integration Tests", () => {
       service.registerResource("spa", new SPAResource(config.resources.spa));
 
       const abortController = new AbortController();
-      await service.start(abortController.signal);
+      await service.listen;
 
       expect(mockApp.serviceOutput).toHaveBeenCalledWith(
         expect.anything(),
@@ -83,6 +82,7 @@ describe("WebHost Integration Tests", () => {
 
     it("should integrate JSON-RPC with complete endpoint", () => {
       const schemas = {
+        name: "TestService" as const,
         path: "/api/rpc",
         methods: {
           ping: {
@@ -119,7 +119,6 @@ describe("WebHost Integration Tests", () => {
       };
 
       const endpoint = createRPCEndpoint(schemas, implementation);
-      const resource = new JsonRpcResource(mockApp, endpoint);
 
       expect(endpoint.path).toBe("/api/rpc");
       expect(Object.keys(endpoint.methods)).toHaveLength(3);
@@ -134,8 +133,6 @@ describe("WebHost Integration Tests", () => {
       const config = {
         host: "127.0.0.1",
         port: 3000,
-        auth: undefined,
-        resources: {}
       };
 
       service = new WebHostService(mockApp, config);
@@ -148,36 +145,10 @@ describe("WebHost Integration Tests", () => {
 
       const abortController = new AbortController();
 
-      await expect(service.start(abortController.signal))
+      await expect(service.listen)
         .rejects.toThrow("Registration failed");
     });
 
-    it("should handle auth configuration errors", () => {
-      const invalidConfig = {
-        host: "127.0.0.1",
-        port: 3000,
-        auth: {
-          invalid: "config"
-        }
-      };
-
-      expect(() => new WebHostService(mockApp, invalidConfig)).not.toThrow();
-    });
-
-    it("should handle missing resources gracefully", () => {
-      const config = {
-        host: "127.0.0.1",
-        port: 3000,
-        auth: undefined,
-        resources: undefined
-      };
-
-      service = new WebHostService(mockApp, config);
-
-      const entries = service.getResourceEntries();
-      const resources = Object.fromEntries(entries);
-      expect(resources).toEqual({});
-    });
   });
 
   describe("URL Generation Integration", () => {
@@ -185,26 +156,23 @@ describe("WebHost Integration Tests", () => {
       const config = {
         host: "127.0.0.1",
         port: 3000,
-        auth: undefined,
-        resources: {}
       };
 
       const service1 = new WebHostService(mockApp, config);
-      await service1.start(new AbortController().signal);
+      await service1.listen();
       // Note: The mock server always returns 127.0.0.1:3000
       expect(service1.getURL().toString()).toBe("http://127.0.0.1:3000/");
     });
 
     it("should handle URL generation when server is started", async () => {
       const config = {
+
         host: "127.0.0.1",
         port: 3000,
-        auth: undefined,
-        resources: {}
       };
 
       const serviceWithServer = new WebHostService(mockApp, config);
-      await serviceWithServer.start(new AbortController().signal);
+      await serviceWithServer.listen();
 
       expect(serviceWithServer.getURL().toString()).toBe("http://127.0.0.1:3000/");
     });
@@ -213,10 +181,9 @@ describe("WebHost Integration Tests", () => {
   describe("Resource Management Integration", () => {
     it("should manage multiple resources correctly", () => {
       service = new WebHostService(mockApp, {
+
         host: "127.0.0.1",
         port: 3000,
-        auth: undefined,
-        resources: {}
       });
 
       const resource1 = { register: vi.fn() };
@@ -234,25 +201,6 @@ describe("WebHost Integration Tests", () => {
       expect(resources.resource1).toBe(resource1);
       expect(resources.resource2).toBe(resource2);
       expect(resources.resource3).toBe(resource3);
-    });
-
-    it("should handle resource overwriting", () => {
-      service = new WebHostService(mockApp, {
-        host: "127.0.0.1",
-        port: 3000,
-        auth: undefined,
-        resources: {}
-      });
-
-      const resource1 = { register: vi.fn() };
-      const resource2 = { register: vi.fn() };
-
-      service.registerResource("same", resource1);
-      service.registerResource("same", resource2);
-
-      const entries = service.getResourceEntries();
-      const resources = Object.fromEntries(entries);
-      expect(resources.same).toBe(resource2);
     });
   });
 

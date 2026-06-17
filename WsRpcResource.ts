@@ -1,7 +1,7 @@
 import type TokenRingApp from "@tokenring-ai/app";
-import type { RpcEndpoint, RpcMethod } from "@tokenring-ai/rpc/types";
+import { RpcService } from "@tokenring-ai/rpc";
+import type { RpcMethod } from "@tokenring-ai/rpc/types";
 import errorAsString from "@tokenring-ai/utility/error/errorAsString";
-import pickValue from "@tokenring-ai/utility/object/pickValue";
 import { z } from "zod";
 import type { BunRouter, BunWebSocket, WebResource } from "./types.ts";
 
@@ -15,15 +15,16 @@ const jsonBodySchema = z.object({
 export default class WsRpcResource implements WebResource {
   constructor(
     private app: TokenRingApp,
-    private jsonRpcEndpoint: RpcEndpoint,
-  ) {}
+    private jsonRpcEndpoint: string,
+  ) {
+  }
 
   register(router: BunRouter) {
-    router.ws(this.jsonRpcEndpoint.path, {
+    const rpcService = this.app.requireService(RpcService);
+    router.ws(this.jsonRpcEndpoint, {
       open: (ws: BunWebSocket) => {
         ws.data = {
           abortController: new AbortController(),
-          path: this.jsonRpcEndpoint.path,
         };
       },
 
@@ -38,7 +39,7 @@ export default class WsRpcResource implements WebResource {
           const data = JSON.parse(messageStr);
           requestId = data.id ?? null;
 
-          const { jsonrpc, id, method, params = [] } = jsonBodySchema.parse(data);
+          const { jsonrpc, id, method: methodName, params = [] } = jsonBodySchema.parse(data);
 
           if (jsonrpc !== "2.0") {
             ws.send(
@@ -51,8 +52,9 @@ export default class WsRpcResource implements WebResource {
             return;
           }
 
-          const handler = pickValue(this.jsonRpcEndpoint.methods, method);
-          if (!handler) {
+          const method = rpcService.getMethod(methodName);
+
+          if (!method) {
             ws.send(
               JSON.stringify({
                 jsonrpc: "2.0",
@@ -63,11 +65,11 @@ export default class WsRpcResource implements WebResource {
             return;
           }
 
-          const validatedParams = handler.inputSchema.parse(params);
+          const validatedParams = method.inputSchema.parse(params);
 
-          if (handler.type === "stream") {
+          if (method.type === "stream") {
             try {
-              const result = handler.execute(validatedParams, this.app, ws.data.abortController.signal) as AsyncGenerator<any>;
+              const result = method.execute(validatedParams, this.app, ws.data.abortController.signal) as AsyncGenerator<any>;
               for await (const event of result) {
                 ws.send(JSON.stringify({ jsonrpc: "2.0", id, result: event }));
               }
@@ -92,8 +94,8 @@ export default class WsRpcResource implements WebResource {
             return;
           }
 
-          const result = await (handler as RpcMethod<any, any, "query" | "mutation">).execute(validatedParams, this.app);
-          const validatedResult = handler.resultSchema.parse(result);
+          const result = await (method as RpcMethod<any, any, "query" | "mutation">).execute(validatedParams, this.app);
+          const validatedResult = method.resultSchema.parse(result);
           ws.send(JSON.stringify({ jsonrpc: "2.0", id, result: validatedResult }));
         } catch (error) {
           ws.send(

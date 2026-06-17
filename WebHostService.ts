@@ -94,7 +94,7 @@ export default class WebHostService implements TokenRingService {
 
   constructor(
     private app: TokenRingApp,
-    private config: ParsedWebHostConfig,
+    private config: Omit<ParsedWebHostConfig, "autoStart">,
   ) {}
 
   get listening() {
