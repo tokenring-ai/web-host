@@ -39,7 +39,8 @@ export default class WsRpcResource implements WebResource {
           const data = JSON.parse(messageStr);
           requestId = data.id ?? null;
 
-          const { jsonrpc, id, method: methodName, params = [] } = jsonBodySchema.parse(data);
+          const { jsonrpc, id, method: methodName, params } = jsonBodySchema.parse(data);
+          const rpcParams = params ?? {};
 
           if (jsonrpc !== "2.0") {
             ws.send(
@@ -65,7 +66,7 @@ export default class WsRpcResource implements WebResource {
             return;
           }
 
-          const validatedParams = method.inputSchema.parse(params);
+          const validatedParams = method.inputSchema.parse(rpcParams);
 
           if (method.type === "stream") {
             try {
