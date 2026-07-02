@@ -1,5 +1,5 @@
 import TokenRingApp from "@tokenring-ai/app";
-import createTestingApp from "@tokenring-ai/app/test/createTestingApp";
+import createTestingApp from "@tokenring-ai/app/test/createTestingApp.test";
 import { createRPCEndpoint } from "@tokenring-ai/rpc/createRPCEndpoint";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";

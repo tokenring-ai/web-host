@@ -1,4 +1,4 @@
-import createTestingApp from "@tokenring-ai/app/test/createTestingApp";
+import createTestingApp from "@tokenring-ai/app/test/createTestingApp.test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebResource } from "./types";
 import WebHostService from "./WebHostService";
