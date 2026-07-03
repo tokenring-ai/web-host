@@ -25,9 +25,9 @@ export function checkAuth(request: BunRequest, config: ParsedWebHostAuthConfig):
       return null;
     }
     const [username, password] = decoded.split(":");
-    const user = config.users[username];
+    const user = config.users[username!];
     if (user?.password === password) {
-      return username;
+      return username!;
     }
   }
 

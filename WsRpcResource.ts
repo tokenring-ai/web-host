@@ -16,8 +16,7 @@ export default class WsRpcResource implements WebResource {
   constructor(
     private app: TokenRingApp,
     private jsonRpcEndpoint: string,
-  ) {
-  }
+  ) {}
 
   register(router: BunRouter) {
     const rpcService = this.app.requireService(RpcService);
