@@ -7,8 +7,8 @@ content, SPAs, and JSON-RPC APIs.
 
 The `@tokenring-ai/web-host` package serves as the web foundation for TokenRing applications. It provides a
 high-performance web server built on **Bun.serve** with a resource registration system that allows different packages to
-extend web functionality through plugins. The package supports static file serving, SPA routing, JSON-RPC endpoints,
-WebSocket RPC, and authentication.
+extend web functionality through plugins. The package supports static file serving, SPA routing, WebSocket RPC,
+and authentication.
 
 ### Key Features
 
@@ -16,11 +16,10 @@ WebSocket RPC, and authentication.
 - **Resource Registration System**: Pluggable architecture using KeyedRegistry for web resources
 - **Static File Serving**: Serve static files with custom routing prefixes
 - **SPA Support**: Single Page Application routing with fallback for client-side navigation
-- **JSON-RPC API**: Built-in JSON-RPC 2.0 support with Server-Sent Events streaming
 - **WebSocket RPC**: Real-time WebSocket-based RPC with streaming support
 - **Authentication**: Basic and Bearer token authentication with per-user credentials
 - **Plugin Integration**: Seamless integration with TokenRing plugin system
-- **Automatic RPC Registration**: Auto-creates JSON-RPC and WebSocket resources from RpcService endpoints
+- **Automatic RPC Registration**: Auto-creates WebSocket RPC resource from RpcService endpoints
 - **Type Safety**: Full TypeScript support with Zod configuration validation
 
 ## Installation
@@ -139,19 +138,18 @@ const webHostService = app.getService(WebHostService);
 The web-host package does not use a provider architecture. Instead, it uses a plugin-based registration system with the
 TokenRing plugin architecture.
 
-## RPC Endpoints
+## WebSocket RPC
 
-The web-host package automatically creates JSON-RPC and WebSocket RPC resources from RPC endpoints registered with the
-RpcService.
+The web-host package automatically creates a WebSocket RPC resource from all RPC endpoints registered with the RpcService.
 
-### Automatic RPC Registration
+### Automatic WebSocket RPC Registration
 
 When the plugin starts, it automatically:
 
-1. Scans all registered RpcService endpoints
-2. Creates JsonRpcResource for HTTP JSON-RPC endpoints
-3. Creates WsRpcResource for WebSocket RPC endpoints
-4. Logs the endpoint paths
+1. Checks if RpcService is available
+2. Creates a single WsRpcResource that handles all registered RPC methods via WebSocket at `/rpc:ws`
+
+All RPC methods from all registered endpoints are accessible through this single WebSocket connection.
 
 ```typescript
 // Register an RPC endpoint
@@ -180,11 +178,10 @@ const endpoint = createRPCEndpoint(calculatorSchema, calculator);
 rpcService.registerEndpoint("calculator", endpoint);
 
 // The web-host plugin will automatically create:
-// - JsonRpcResource at /api/calc
-// - WsRpcResource at /api/calc
+// - WsRpcResource at /rpc:ws
 ```
 
-### JSON-RPC Error Codes
+### WebSocket RPC Error Codes
 
 | Error Code | Description                                    |
 |------------|------------------------------------------------|
@@ -194,6 +191,12 @@ rpcService.registerEndpoint("calculator", endpoint);
 | -32603     | Internal error (validation or execution error) |
 
 ## Chat Commands
+
+| Command | Description |
+|---------|-------------|
+| `/webhost show` | Show web host URL and available resources |
+| `/webhost start` | Start the web host server |
+| `/webhost stop` | Stop the web host server |
 
 ### webhost show
 
@@ -263,12 +266,14 @@ type ParsedWebHostConfig = z.output<typeof WebHostConfigSchema>;
 ### WebHostConfig Schema
 
 ```typescript
-const WebHostConfigSchema = z.object({
-  autoStart: z.boolean().default(false),
-  host: z.string().default("127.0.0.1"),
-  port: z.number().default(0),
-  auth: WebHostAuthConfigSchema.optional()
-}).prefault({});
+const WebHostConfigSchema = z
+  .object({
+    autoStart: z.boolean().default(false),
+    host: z.string().default("127.0.0.1"),
+    port: z.number().default(0),
+    auth: WebHostAuthConfigSchema.exactOptional(),
+  })
+  .prefault({});
 ```
 
 **Configuration Options:**
@@ -285,8 +290,8 @@ const WebHostConfigSchema = z.object({
 ```typescript
 const WebHostAuthConfigSchema = z.object({
   users: z.record(z.string(), z.object({
-    password: z.string().optional(),
-    bearerToken: z.string().optional(),
+    password: z.string().exactOptional(),
+    bearerToken: z.string().exactOptional(),
   }))
 });
 ```
@@ -308,7 +313,7 @@ const staticResourceConfigSchema = z.object({
   root: z.string(),
   description: z.string(),
   indexFile: z.string(),
-  notFoundFile: z.string().optional(),
+  notFoundFile: z.string().exactOptional(),
   prefix: z.string()
 });
 ```
@@ -362,27 +367,22 @@ const app = new TokenRingApp({
           bearerToken: "admin-token-xyz"
         }
       }
-    },
-    resources: {
-      "static-files": {
-        type: "static",
-        root: "./public",
-        description: "Public static files",
-        indexFile: "index.html",
-        prefix: "/static"
-      },
-      "spa": {
-        type: "spa",
-        file: "./dist/index.html",
-        description: "Main application",
-        prefix: "/"
-      }
     }
   }
 });
 
 await app.addPlugin(webHostPackage);
 await app.start();
+
+// Resources must be registered programmatically after the plugin starts
+const webHostService = app.getService(WebHostService);
+webHostService.registerResource("static-files", new StaticResource({
+  type: "static",
+  root: "./public",
+  description: "Public static files",
+  indexFile: "index.html",
+  prefix: "/static"
+}));
 ```
 
 ### Service Integration
@@ -391,12 +391,12 @@ The web-host service integrates with:
 
 - **@tokenring-ai/app**: Service registration and lifecycle management
 - **@tokenring-ai/agent**: Agent command registration via `/webhost show`, `/webhost start`, `/webhost stop` commands
-- **@tokenring-ai/rpc**: Automatic JSON-RPC and WebSocket resource creation
+- **@tokenring-ai/rpc**: Automatic WebSocket RPC resource creation
 - **@tokenring-ai/utility**: Registry and utility functions
 
 ### RPC Integration
 
-RPC endpoints registered with RpcService are automatically converted to web resources:
+All RPC endpoints registered with RpcService are accessible through a single WebSocket RPC connection:
 
 ```typescript
 // Register RPC endpoint
@@ -404,8 +404,8 @@ const endpoint = createRPCEndpoint(calculatorSchema, calculator);
 rpcService.registerEndpoint("calculator", endpoint);
 
 // Web-host plugin automatically creates:
-// - JsonRpcResource for HTTP JSON-RPC
-// - WsRpcResource for WebSocket RPC
+// - Single WsRpcResource handling all RPC methods at /rpc:ws
+// - All methods accessible via: calculator.add, calculator.multiply, etc.
 ```
 
 ## Usage Examples
@@ -502,7 +502,7 @@ if (webHost) {
 }
 ```
 
-### JSON-RPC Endpoint
+### WebSocket RPC Endpoint Setup
 
 ```typescript
 import { createRPCEndpoint } from "@tokenring-ai/rpc/createRPCEndpoint";
@@ -553,45 +553,6 @@ const endpoint = createRPCEndpoint(calculatorSchema, calculator);
 rpcService.registerEndpoint("calculator", endpoint);
 ```
 
-### JSON-RPC Client
-
-```typescript
-import { createJsonRPCClient } from "@tokenring-ai/web-host/createJsonRPCClient";
-import type { RPCSchema } from "@tokenring-ai/rpc/types";
-
-const calculatorSchema: RPCSchema = {
-  name: "Calculator",
-  path: "/api/calc",
-  methods: {
-    add: {
-      type: "query",
-      input: z.object({ a: z.number(), b: z.number() }),
-      result: z.object({ result: z.number() })
-    },
-    streamResult: {
-      type: "stream",
-      input: z.object({ steps: z.number() }),
-      result: z.object({ step: z.number(), value: z.number() })
-    }
-  }
-};
-
-const client = createJsonRPCClient(new URL("http://localhost:3000"), calculatorSchema);
-
-// Call query/mutation methods
-const result = await client.add({ a: 5, b: 3 });
-
-// Stream methods return async generators
-const controller = new AbortController();
-for await (const update of client.streamResult({ steps: 5 }, controller.signal)) {
-  console.log(update);
-  if (update.step >= 2) {
-    controller.abort();
-    break;
-  }
-}
-```
-
 ### WebSocket RPC Client
 
 ```typescript
@@ -640,8 +601,8 @@ Implement custom header-based authentication if you need to pass user informatio
 
 5. **Configure Authentication**: Use authentication for all production deployments to secure your APIs.
 
-6. **Automatic Endpoint Registration**: Let the web-host plugin automatically create JSON-RPC and WebSocket RPC
-   resources from RpcService endpoints.
+6. **Automatic WebSocket RPC Registration**: The web-host plugin automatically creates a WebSocket RPC resource
+   from all RpcService endpoints.
 
 7. **SPA Routing**: Use SPAResource for single-page applications to ensure proper client-side routing.
 
@@ -667,12 +628,8 @@ bun test:coverage
 - `WebHostService.test.ts` - Service lifecycle and resource registration
 - `StaticResource.test.ts` - Static file serving
 - `SPAResource.test.ts` - SPA routing
-- `JsonRpcResource.test.ts` - JSON-RPC API endpoints
-- `WsRpcResource.test.ts` - WebSocket RPC endpoints
 - `auth.test.ts` - Authentication
 - `integration.test.ts` - Integration tests
-- `createJsonRPCClient.test.ts` - HTTP client
-- `createWsRPCClient.test.ts` - WebSocket client
 
 ## Dependencies
 
@@ -684,7 +641,7 @@ bun test:coverage
 | @tokenring-ai/agent   | 0.2.0   | Agent system with state management                 |
 | @tokenring-ai/utility | 0.2.0   | Registry and utility functions                     |
 | @tokenring-ai/rpc     | 0.2.0   | RPC endpoint registration and execution            |
-| zod                   | ^4.3.6  | Schema validation                                  |
+| zod                   | ^4.4.3  | Schema validation                                  |
 
 ### Development Dependencies
 
@@ -705,12 +662,13 @@ pkg/web-host/
 ├── WebHostService.ts           # Main service implementation
 ├── StaticResource.ts           # Static file resource
 ├── SPAResource.ts              # SPA resource implementation
-├── JsonRpcResource.ts          # JSON-RPC resource implementation
+</parameter>
+<parameter=multiple>
+False
 ├── WsRpcResource.ts            # WebSocket RPC resource implementation
 ├── auth.ts                     # Authentication utilities
 ├── types.ts                    # Type definitions
 ├── schema.ts                   # Configuration schemas
-├── createJsonRPCClient.ts      # HTTP JSON-RPC client
 ├── createWsRPCClient.ts        # WebSocket RPC client
 ├── commands.ts                 # Command exports
 ├── commands/
