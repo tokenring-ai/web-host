@@ -1,10 +1,16 @@
 import type TokenRingApp from "@tokenring-ai/app";
 import type { TokenRingService } from "@tokenring-ai/app/types";
+import { ConfigurationError } from "@tokenring-ai/app/types";
 import { stripUndefinedKeys } from "@tokenring-ai/utility/object/stripObject";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import { checkAuth, unauthorizedResponse } from "./auth.ts";
 import type { ParsedWebHostConfig } from "./schema.ts";
 import type { BunRequest, BunResponse, BunRouter, BunWebSocket, RouteHandler, StaticOptions, WebResource, WebSocketHandler } from "./types.ts";
+
+type Context = {
+  path: string;
+  abortController: AbortController;
+};
 
 /**
  * Router implementation that collects routes and later integrates with Bun.serve
@@ -103,7 +109,7 @@ export default class WebHostService implements TokenRingService {
 
   async listen() {
     if (this.server) {
-      throw new Error("Server already listening");
+      throw new ConfigurationError(this.name, "Server already listening");
     }
     this.router = new Router();
 
@@ -151,10 +157,9 @@ export default class WebHostService implements TokenRingService {
 
   getURL(): URL {
     if (!this.server) {
-      throw new Error("Server not started");
+      throw new ConfigurationError(this.name, "Server not started");
     }
-    const url = new URL(`http://${this.server.hostname}:${this.server.port}`);
-    return url;
+    return new URL(`http://${this.server.hostname}:${this.server.port}`);
   }
 
   private buildFetchHandler() {
@@ -164,7 +169,7 @@ export default class WebHostService implements TokenRingService {
     const fallback = this.router.getFallback();
     const authConfig = this.config.auth;
 
-    return async (request: Request, server: any): Promise<Response | undefined> => {
+    return async (request: Request, server: Bun.Server<Context>): Promise<Response | undefined> => {
       const url = new URL(request.url);
       const path = url.pathname;
 
@@ -259,7 +264,7 @@ export default class WebHostService implements TokenRingService {
     const wsRoutes = this.router.getWsRoutes();
 
     return {
-      open(ws: any) {
+      open(ws: Bun.ServerWebSocket<Context>) {
         const handler = wsRoutes.get(ws.data.path);
         if (handler?.open) {
           // Create wrapper with send method
@@ -275,7 +280,7 @@ export default class WebHostService implements TokenRingService {
         }
       },
 
-      close(ws: any) {
+      close(ws: Bun.ServerWebSocket<Context>) {
         const handler = wsRoutes.get(ws.data.path);
         if (handler?.close) {
           const wsWrapper: BunWebSocket = {
@@ -290,7 +295,7 @@ export default class WebHostService implements TokenRingService {
         }
       },
 
-      message(ws: any, message: string | Buffer) {
+      message(ws: Bun.ServerWebSocket<Context>, message: string | Buffer) {
         const handler = wsRoutes.get(ws.data.path);
         if (handler?.message) {
           const wsWrapper: BunWebSocket = {

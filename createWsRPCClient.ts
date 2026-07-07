@@ -1,4 +1,5 @@
 import type { FunctionTypeOfRPCCall, RPCSchema } from "@tokenring-ai/rpc/types";
+import z from "zod";
 
 let rpcId = 0;
 
@@ -17,6 +18,18 @@ type SocketEntry = {
 
 const socketCache = new Map<string, SocketEntry>();
 
+const JSONRPCSchema = z.object({
+  id: z.number(),
+  result: z.unknown(),
+  error: z
+    .object({
+      code: z.number(),
+      message: z.string(),
+    })
+    .exactOptional(),
+  stream: z.literal("end").exactOptional(),
+});
+
 export default function createWsRPCClient<T extends RPCSchema>(wsUrl: URL, schemas: T) {
   const urlKey = wsUrl.toString();
 
@@ -27,8 +40,9 @@ export default function createWsRPCClient<T extends RPCSchema>(wsUrl: URL, schem
     const pendingStreams = new Map<number, StreamHandler>();
 
     socket.onmessage = event => {
-      const data = JSON.parse(event.data);
-      const { id, result, error, stream } = data;
+      const data = JSON.parse(event.data) as unknown;
+      const parsed = JSONRPCSchema.parse(data);
+      const { id, result, error, stream } = parsed;
 
       if (pendingRequests.has(id)) {
         const { resolve, reject } = pendingRequests.get(id)!;
@@ -75,17 +89,17 @@ export default function createWsRPCClient<T extends RPCSchema>(wsUrl: URL, schem
     Object.entries(schemas.methods).map(([methodName, method]) => [
       methodName,
       method.type === "stream"
-        ? async function* (params: any, signal: AbortSignal) {
+        ? async function* (params: unknown, signal: AbortSignal) {
             await ensureOpen();
             const id = ++rpcId;
 
-            const queue: any[] = [];
-            let resolveNext: ((value: any) => void) | null = null;
-            let finished = false;
+            const queue: unknown[] = [];
+            let resolveNext: ((value: unknown) => void) | null = null;
+            let finished = false as boolean;
             let streamError: Error | null = null;
 
             pendingStreams.set(id, {
-              enqueue: (val: any) => {
+              enqueue: (val: unknown) => {
                 queue.push(val);
                 if (resolveNext) {
                   const resolve = resolveNext;
@@ -128,16 +142,19 @@ export default function createWsRPCClient<T extends RPCSchema>(wsUrl: URL, schem
                 resolve(undefined);
               }
             };
-            signal?.addEventListener("abort", onAbort);
+            signal.addEventListener("abort", onAbort);
 
             try {
+              // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- this is ok
               while (true) {
+                // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- can be mutated asynchronously
                 if (streamError) throw streamError;
                 if (queue.length > 0) {
                   yield queue.shift();
                   continue;
                 }
-                if (finished || signal?.aborted) break;
+                // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- can be mutated asynchronously
+                if (finished || signal.aborted) break;
 
                 await new Promise(resolve => {
                   resolveNext = resolve;
@@ -145,10 +162,10 @@ export default function createWsRPCClient<T extends RPCSchema>(wsUrl: URL, schem
               }
             } finally {
               pendingStreams.delete(id);
-              signal?.removeEventListener("abort", onAbort);
+              signal.removeEventListener("abort", onAbort);
             }
           }
-        : async (params: any) => {
+        : async (params: unknown) => {
             await ensureOpen();
             const id = ++rpcId;
             return new Promise((resolve, reject) => {

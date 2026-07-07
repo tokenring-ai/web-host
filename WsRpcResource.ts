@@ -1,7 +1,7 @@
 import type TokenRingApp from "@tokenring-ai/app";
 import { RpcService } from "@tokenring-ai/rpc";
 import type { RpcMethod } from "@tokenring-ai/rpc/types";
-import errorAsString from "@tokenring-ai/utility/error/errorAsString";
+import formatError from "@tokenring-ai/utility/error/formatError";
 import { z } from "zod";
 import type { BunRouter, BunWebSocket, WebResource } from "./types.ts";
 
@@ -10,6 +10,10 @@ const jsonBodySchema = z.object({
   id: z.number(),
   method: z.string(),
   params: z.unknown().exactOptional(),
+});
+
+const jsonBodyIdSchema = z.object({
+  id: z.number(),
 });
 
 export default class WsRpcResource implements WebResource {
@@ -32,13 +36,30 @@ export default class WsRpcResource implements WebResource {
       },
 
       message: async (ws: BunWebSocket, message: string | Buffer) => {
-        let requestId: string | number | null = null;
-        try {
-          const messageStr = typeof message === "string" ? message : message.toString();
-          const data = JSON.parse(messageStr);
-          requestId = data.id ?? null;
+        const messageStr = typeof message === "string" ? message : message.toString();
 
-          const { jsonrpc, id, method: methodName, params } = jsonBodySchema.parse(data);
+        let data: unknown;
+        try {
+          data = JSON.parse(messageStr);
+        } catch {
+          // Not valid JSON at all — per JSON-RPC 2.0 spec, id must be null here.
+          ws.send(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: null,
+              error: { code: -32700, message: "Parse error" },
+            }),
+          );
+          return;
+        }
+
+        // Best-effort extraction of the id so we can echo it back on any later
+        // error, even if the rest of the request fails schema validation.
+        const idResult = jsonBodyIdSchema.safeParse(data);
+        const id = idResult.success ? idResult.data.id : null;
+
+        try {
+          const { jsonrpc, method: methodName, params } = jsonBodySchema.parse(data);
           const rpcParams = params ?? {};
 
           if (jsonrpc !== "2.0") {
@@ -65,11 +86,11 @@ export default class WsRpcResource implements WebResource {
             return;
           }
 
-          const validatedParams = method.inputSchema.parse(rpcParams);
+          const validatedParams = method.inputSchema.parse(rpcParams) as unknown;
 
           if (method.type === "stream") {
             try {
-              const result = method.execute(validatedParams, this.app, ws.data.abortController.signal) as AsyncGenerator<any>;
+              const result = method.execute(validatedParams, this.app, ws.data.abortController.signal) as AsyncGenerator<unknown>;
               for await (const event of result) {
                 ws.send(JSON.stringify({ jsonrpc: "2.0", id, result: event }));
               }
@@ -86,7 +107,7 @@ export default class WsRpcResource implements WebResource {
                 JSON.stringify({
                   jsonrpc: "2.0",
                   id,
-                  error: { code: -32603, message: errorAsString(error) },
+                  error: { code: -32603, message: formatError(error) },
                 }),
               );
               ws.close();
@@ -94,15 +115,15 @@ export default class WsRpcResource implements WebResource {
             return;
           }
 
-          const result = await (method as RpcMethod<any, any, "query" | "mutation">).execute(validatedParams, this.app);
-          const validatedResult = method.resultSchema.parse(result);
+          const result = (await (method as RpcMethod<any, any, "query" | "mutation">).execute(validatedParams, this.app)) as unknown;
+          const validatedResult = method.resultSchema.parse(result) as unknown;
           ws.send(JSON.stringify({ jsonrpc: "2.0", id, result: validatedResult }));
         } catch (error) {
           ws.send(
             JSON.stringify({
               jsonrpc: "2.0",
-              id: requestId,
-              error: { code: -32603, message: errorAsString(error) },
+              id,
+              error: { code: -32603, message: formatError(error) },
             }),
           );
         }
