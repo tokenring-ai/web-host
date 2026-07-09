@@ -1,26 +1,16 @@
 # @tokenring-ai/web-host
 
-Bun-based web hosting service for TokenRing applications, providing a pluggable system for serving web resources, static
-content, SPAs, and JSON-RPC APIs.
+Bun-based web hosting service for TokenRing applications, providing a
+pluggable system for serving web resources, static content, SPAs, and
+JSON-RPC APIs.
 
 ## Overview
 
-The `@tokenring-ai/web-host` package serves as the web foundation for TokenRing applications. It provides a
-high-performance web server built on **Bun.serve** with a resource registration system that allows different packages to
-extend web functionality through plugins. The package supports static file serving, SPA routing, WebSocket RPC,
-and authentication.
-
-### Key Features
-
-- **High-Performance Server**: Built on Bun.serve for low-latency HTTP and WebSocket handling
-- **Resource Registration System**: Pluggable architecture using KeyedRegistry for web resources
-- **Static File Serving**: Serve static files with custom routing prefixes
-- **SPA Support**: Single Page Application routing with fallback for client-side navigation
-- **WebSocket RPC**: Real-time WebSocket-based RPC with streaming support
-- **Authentication**: Basic and Bearer token authentication with per-user credentials
-- **Plugin Integration**: Seamless integration with TokenRing plugin system
-- **Automatic RPC Registration**: Auto-creates WebSocket RPC resource from RpcService endpoints
-- **Type Safety**: Full TypeScript support with Zod configuration validation
+The `@tokenring-ai/web-host` package serves as the web foundation for
+TokenRing applications. It provides a high-performance web server built on
+**Bun.serve** with a resource registration system that allows different
+packages to extend web functionality through plugins. The package supports
+static file serving, SPA routing, WebSocket RPC, and authentication.
 
 ## Installation
 
@@ -28,167 +18,22 @@ and authentication.
 bun add @tokenring-ai/web-host
 ```
 
-## Core Components
+## Features
 
-### WebHostService
-
-The main service that manages the web server lifecycle and resource registration.
-
-**Class Signature:**
-
-```typescript
-class WebHostService implements TokenRingService {
-  readonly name = "WebHostService";
-  description = "Bun web host for serving resources and APIs";
-
-  resources: KeyedRegistry<WebResource>;
-  registerResource: (name: string, resource: WebResource) => void;
-  getResourceEntries: () => Iterable<[string, WebResource]>;
-
-  constructor(app: TokenRingApp, config: ParsedWebHostConfig);
-
-  get listening: boolean;
-
-  getURL(): URL;
-
-  async listen(): Promise<void>;
-
-  async reconfigure(config: ParsedWebHostConfig): Promise<void>;
-
-  async stop(): Promise<void>;
-}
-```
-
-**Properties:**
-
-| Property             | Type                                            | Description                           |
-|----------------------|-------------------------------------------------|---------------------------------------|
-| `name`               | string                                          | Service name (`"WebHostService"`)     |
-| `description`        | string                                          | Service description                   |
-| `resources`          | `KeyedRegistry<WebResource>`                    | Registry of registered web resources  |
-| `registerResource`   | `(name: string, resource: WebResource) => void` | Register a web resource               |
-| `getResourceEntries` | `() => Iterable<[string, WebResource]>`         | Get all registered resources          |
-| `listening`          | `boolean`                                       | Whether server is currently listening |
-
-**Methods:**
-
-| Method        | Signature                                        | Description                                     |
-|---------------|--------------------------------------------------|-------------------------------------------------|
-| `listen`      | `() => Promise<void>`                            | Start the Bun server and register all resources |
-| `stop`        | `() => Promise<void>`                            | Stop the server and close all connections       |
-| `reconfigure` | `(config: ParsedWebHostConfig) => Promise<void>` | Reconfigure and restart the server              |
-| `getURL`      | `() => URL`                                      | Get the current server URL                      |
-
-### WebResource Interface
-
-Interface for web resources that can be registered with the WebHostService.
-
-```typescript
-interface WebResource {
-  register(router: BunRouter): MaybePromise<void>;
-}
-```
-
-### BunRouter Interface
-
-Router interface for registering handlers, websockets, and static files.
-
-```typescript
-interface BunRouter {
-  get(path: string, handler: RouteHandler): void;
-  post(path: string, handler: RouteHandler): void;
-  put(path: string, handler: RouteHandler): void;
-  delete(path: string, handler: RouteHandler): void;
-  ws(path: string, handler: WebSocketHandler): void;
-  static(prefix: string, root: string, options?: StaticOptions): void;
-  fallback(handler: RouteHandler): void;
-}
-```
-
-## Services
-
-### WebHostService Implementation
-
-The WebHostService is a TokenRingService that provides web server functionality.
-
-**Service Registration:**
-
-The service is automatically registered when the web-host plugin is installed with a webHost configuration.
-
-```typescript
-import { TokenRingApp } from "@tokenring-ai/app";
-import webHostPackage from "@tokenring-ai/web-host";
-
-const app = new TokenRingApp({
-  webHost: {
-    port: 3000,
-    host: "127.0.0.1"
-  }
-});
-
-await app.addPlugin(webHostPackage);
-await app.start();
-
-// Access the service
-const webHostService = app.getService(WebHostService);
-```
-
-## Provider Documentation
-
-The web-host package does not use a provider architecture. Instead, it uses a plugin-based registration system with the
-TokenRing plugin architecture.
-
-## WebSocket RPC
-
-The web-host package automatically creates a WebSocket RPC resource from all RPC endpoints registered with the RpcService.
-
-### Automatic WebSocket RPC Registration
-
-When the plugin starts, it automatically:
-
-1. Checks if RpcService is available
-2. Creates a single WsRpcResource that handles all registered RPC methods via WebSocket at `/rpc:ws`
-
-All RPC methods from all registered endpoints are accessible through this single WebSocket connection.
-
-```typescript
-// Register an RPC endpoint
-import { createRPCEndpoint } from "@tokenring-ai/rpc/createRPCEndpoint";
-import { RpcService } from "@tokenring-ai/rpc";
-
-const calculatorSchema = {
-  name: "Calculator",
-  path: "/api/calc",
-  methods: {
-    add: {
-      type: "query",
-      input: z.object({ a: z.number(), b: z.number() }),
-      result: z.object({ result: z.number() })
-    }
-  }
-};
-
-const calculator = {
-  add: async (params: { a: number; b: number }, app) => ({
-    result: params.a + params.b
-  })
-};
-
-const endpoint = createRPCEndpoint(calculatorSchema, calculator);
-rpcService.registerEndpoint("calculator", endpoint);
-
-// The web-host plugin will automatically create:
-// - WsRpcResource at /rpc:ws
-```
-
-### WebSocket RPC Error Codes
-
-| Error Code | Description                                    |
-|------------|------------------------------------------------|
-| -32700     | Parse error (invalid JSON)                     |
-| -32600     | Invalid Request (wrong JSON-RPC version)       |
-| -32601     | Method not found                               |
-| -32603     | Internal error (validation or execution error) |
+- **High-Performance Server**: Built on Bun.serve for low-latency HTTP and
+  WebSocket handling
+- **Resource Registration System**: Pluggable architecture using KeyedRegistry
+  for web resources
+- **Static File Serving**: Serve static files with custom routing prefixes
+- **SPA Support**: Single Page Application routing with fallback for
+  client-side navigation
+- **WebSocket RPC**: Real-time WebSocket-based RPC with streaming support
+- **Authentication**: Basic and Bearer token authentication with per-user
+  credentials
+- **Plugin Integration**: Seamless integration with TokenRing plugin system
+- **Automatic RPC Registration**: Auto-creates WebSocket RPC resource from
+  RpcService endpoints
+- **Type Safety**: Full TypeScript support with Zod configuration validation
 
 ## Chat Commands
 
@@ -198,7 +43,7 @@ rpcService.registerEndpoint("calculator", endpoint);
 | `/webhost start` | Start the web host server |
 | `/webhost stop` | Stop the web host server |
 
-### webhost show
+### /webhost show
 
 Displays the current web host URL and lists all registered resources.
 
@@ -215,10 +60,9 @@ Web host running at: http://localhost:3000
 Registered resources:
   - static-files
   - spa
-  - calculator
 ```
 
-### webhost start
+### /webhost start
 
 Starts the web host server.
 
@@ -234,7 +78,7 @@ Starts the web host server.
 Web host started at: http://localhost:3000
 ```
 
-### webhost stop
+### /webhost stop
 
 Stops the web host server.
 
@@ -249,6 +93,12 @@ Stops the web host server.
 ```text
 Web host stopped
 ```
+
+## Tools
+
+This package does not define any tools. Tools are typically used for
+agent-assisted operations, and the web-host package focuses on web server
+functionality rather than agent tools.
 
 ## Configuration
 
@@ -281,7 +131,7 @@ const WebHostConfigSchema = z
 | Option      | Type       | Required | Default       | Description                                                                     |
 |-------------|------------|----------|---------------|---------------------------------------------------------------------------------|
 | `autoStart` | boolean    | No       | `false`       | Whether to automatically start the server when plugin starts                    |
-| `host`      | string     | No       | `"127.0.0.1"` | Host address to bind to                                                         |
+| `host`      | string     | No       | `127.0.0.1`   | Host address to bind to                                                         |
 | `port`      | number     | No       | `0`           | Port number. If 0 or not specified, an available port is automatically assigned |
 | `auth`      | AuthConfig | No       | -             | Authentication configuration                                                    |
 
@@ -302,8 +152,8 @@ const WebHostAuthConfigSchema = z.object({
 | `password`    | string | Optional password for Basic authentication      |
 | `bearerToken` | string | Optional bearer token for Bearer authentication |
 
-**Note:** Each user can have either a password, a bearer token, or both. Users without either credential cannot
-authenticate.
+**Note:** Each user can have either a password, a bearer token, or both. Users
+without either credential cannot authenticate.
 
 ### StaticResource Config Schema
 
@@ -345,362 +195,21 @@ const spaResourceConfigSchema = z.object({
 | `description` | string  | Human-readable description          |
 | `prefix`      | string  | URL prefix for SPA routing          |
 
-## Integration
+### Sample Configuration
 
-### Plugin Installation
-
-The web-host package integrates with TokenRing applications as a plugin.
-
-```typescript
-import { TokenRingApp } from "@tokenring-ai/app";
-import webHostPackage from "@tokenring-ai/web-host";
-
-const app = new TokenRingApp({
-  webHost: {
-    port: 3000,
-    host: "127.0.0.1",
-    autoStart: true,
-    auth: {
-      users: {
-        "admin": {
-          password: "secret123",
-          bearerToken: "admin-token-xyz"
-        }
-      }
-    }
-  }
-});
-
-await app.addPlugin(webHostPackage);
-await app.start();
-
-// Resources must be registered programmatically after the plugin starts
-const webHostService = app.getService(WebHostService);
-webHostService.registerResource("static-files", new StaticResource({
-  type: "static",
-  root: "./public",
-  description: "Public static files",
-  indexFile: "index.html",
-  prefix: "/static"
-}));
+```yaml
+webHost:
+  autoStart: true
+  host: "127.0.0.1"
+  port: 3000
+  auth:
+    users:
+      admin:
+        password: "secret123"
+        bearerToken: "admin-token-xyz"
+      user1:
+        password: "user-pass-123"
 ```
-
-### Service Integration
-
-The web-host service integrates with:
-
-- **@tokenring-ai/app**: Service registration and lifecycle management
-- **@tokenring-ai/agent**: Agent command registration via `/webhost show`, `/webhost start`, `/webhost stop` commands
-- **@tokenring-ai/rpc**: Automatic WebSocket RPC resource creation
-- **@tokenring-ai/utility**: Registry and utility functions
-
-### RPC Integration
-
-All RPC endpoints registered with RpcService are accessible through a single WebSocket RPC connection:
-
-```typescript
-// Register RPC endpoint
-const endpoint = createRPCEndpoint(calculatorSchema, calculator);
-rpcService.registerEndpoint("calculator", endpoint);
-
-// Web-host plugin automatically creates:
-// - Single WsRpcResource handling all RPC methods at /rpc:ws
-// - All methods accessible via: calculator.add, calculator.multiply, etc.
-```
-
-## Usage Examples
-
-### Basic Configuration
-
-```typescript
-import { TokenRingApp } from "@tokenring-ai/app";
-import webHostPackage from "@tokenring-ai/web-host";
-
-const app = new TokenRingApp({
-  webHost: {
-    port: 3000,
-    host: "127.0.0.1"
-  }
-});
-
-await app.addPlugin(webHostPackage);
-await app.start();
-```
-
-### Static File Serving
-
-```typescript
-import { StaticResource } from "@tokenring-ai/web-host";
-import WebHostService from "@tokenring-ai/web-host";
-
-const app = new TokenRingApp({
-  webHost: { port: 3000 }
-});
-
-await app.addPlugin(webHostPackage);
-await app.start();
-
-const webHostService = app.getService(WebHostService);
-webHostService.registerResource("public", new StaticResource({
-  type: "static",
-  root: "./public",
-  description: "Public static files",
-  indexFile: "index.html",
-  prefix: "/static"
-}));
-```
-
-### SPA Routing
-
-```typescript
-import { SPAResource } from "@tokenring-ai/web-host";
-
-const spaResource = new SPAResource({
-  type: "spa",
-  file: "./dist/index.html",
-  description: "Main SPA application",
-  prefix: "/"
-});
-
-webHostService.registerResource("spa", spaResource);
-```
-
-**SPA Routing Behavior:**
-
-- Static files (JS, CSS, images) are served by Bun's native file serving
-- The root path serves the specified index.html file
-- All other routes that don't match static files also serve index.html (for client-side routing)
-- If the SPA file doesn't exist, a warning is logged but the server continues
-
-### Custom Resource Registration
-
-```typescript
-import { WebHostService } from "@tokenring-ai/web-host";
-import type { WebResource } from "@tokenring-ai/web-host";
-
-const webHost = app.getServiceByType(WebHostService);
-
-if (webHost) {
-  const apiResource: WebResource = {
-    async register(router) {
-      router.get("/api/health", async (request, response) => {
-        return response.json({ status: "ok" });
-      });
-
-      router.post("/api/data", async (request, response) => {
-        const data = await request.json();
-        return response.json({ received: data });
-      });
-
-      router.get("/api/whoami", async (request, response) => {
-        return response.json({ user: request.headers.get("x-user") });
-      });
-    }
-  };
-
-  webHost.registerResource("customAPI", apiResource);
-}
-```
-
-### WebSocket RPC Endpoint Setup
-
-```typescript
-import { createRPCEndpoint } from "@tokenring-ai/rpc/createRPCEndpoint";
-import { RpcService } from "@tokenring-ai/rpc";
-import { z } from "zod";
-
-const calculatorSchema = {
-  name: "Calculator",
-  path: "/api/calc",
-  methods: {
-    add: {
-      type: "query",
-      input: z.object({ a: z.number(), b: z.number() }),
-      result: z.object({ result: z.number() })
-    },
-    multiply: {
-      type: "mutation",
-      input: z.object({ a: z.number(), b: z.number() }),
-      result: z.object({ result: z.number() })
-    },
-    streamResult: {
-      type: "stream",
-      input: z.object({ steps: z.number() }),
-      result: z.object({ step: z.number(), value: z.number() })
-    }
-  }
-};
-
-const calculator = {
-  add: async (params: { a: number; b: number }, app) => ({
-    result: params.a + params.b
-  }),
-  multiply: async (params: { a: number; b: number }, app) => ({
-    result: params.a * params.b
-  }),
-  streamResult: async function* (params: { steps: number }, app, signal: AbortSignal) {
-    let value = 0;
-    for (let i = 0; i < params.steps; i++) {
-      if (signal.aborted) break;
-      value += Math.random();
-      yield { step: i, value };
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-  }
-};
-
-const endpoint = createRPCEndpoint(calculatorSchema, calculator);
-rpcService.registerEndpoint("calculator", endpoint);
-```
-
-### WebSocket RPC Client
-
-```typescript
-import { createWsRPCClient } from "@tokenring-ai/web-host/createWsRPCClient";
-import type { RPCSchema } from "@tokenring-ai/rpc/types";
-
-const wsClient = createWsRPCClient(new URL("http://localhost:3000"), calculatorSchema);
-
-// Call methods on WebSocket
-const result = await wsClient.add({ a: 5, b: 3 });
-
-// Stream methods return async generators
-for await (const update of wsClient.streamResult({ steps: 5 }, signal)) {
-  console.log(update);
-}
-```
-
-## Authentication
-
-### Basic Authentication
-
-```bash
-curl -u admin:secret123 http://localhost:3000/api/status
-```
-
-### Bearer Token Authentication
-
-```bash
-curl -H "Authorization: Bearer admin-token-xyz" http://localhost:3000/api/status
-```
-
-**Note:** The authentication system validates credentials but does not attach user information to the request object.
-Implement custom header-based authentication if you need to pass user information to handlers.
-
-## Best Practices
-
-1. **Use Resource Registration**: Register resources at startup or through the plugin system for consistent
-   initialization.
-
-2. **Validate Configuration**: Use the provided Zod schemas to validate configuration before creating resources.
-
-3. **Handle Streaming Properly**: When implementing stream methods, always check the `AbortSignal` to support graceful
-   shutdown.
-
-4. **Use Type Safety**: Leverage the type utilities for type-safe RPC interactions.
-
-5. **Configure Authentication**: Use authentication for all production deployments to secure your APIs.
-
-6. **Automatic WebSocket RPC Registration**: The web-host plugin automatically creates a WebSocket RPC resource
-   from all RpcService endpoints.
-
-7. **SPA Routing**: Use SPAResource for single-page applications to ensure proper client-side routing.
-
-8. **Error Handling**: Implement proper error handling in RPC methods to provide meaningful error messages.
-
-## Testing
-
-The package includes comprehensive unit and integration tests using Vitest:
-
-```bash
-# Run all tests
-bun test
-
-# Run tests in watch mode
-bun test:watch
-
-# Run tests with coverage
-bun test:coverage
-```
-
-**Test Files:**
-
-- `WebHostService.test.ts` - Service lifecycle and resource registration
-- `StaticResource.test.ts` - Static file serving
-- `SPAResource.test.ts` - SPA routing
-- `auth.test.ts` - Authentication
-- `integration.test.ts` - Integration tests
-
-## Dependencies
-
-### Production Dependencies
-
-| Package               | Version | Description                                        |
-|-----------------------|---------|----------------------------------------------------|
-| @tokenring-ai/app     | 0.2.0   | Base application framework with service management |
-| @tokenring-ai/agent   | 0.2.0   | Agent system with state management                 |
-| @tokenring-ai/utility | 0.2.0   | Registry and utility functions                     |
-| @tokenring-ai/rpc     | 0.2.0   | RPC endpoint registration and execution            |
-| zod                   | ^4.4.3  | Schema validation                                  |
-
-### Development Dependencies
-
-| Package    | Version | Description         |
-|------------|---------|---------------------|
-| vitest     | ^4.1.1  | Testing framework   |
-| typescript | ^6.0.2  | TypeScript compiler |
-
-## Package Structure
-
-```text
-pkg/web-host/
-├── index.ts                    # Main entry point and exports
-├── plugin.ts                   # Plugin definition for TokenRing integration
-├── package.json                # Package manifest
-├── LICENSE                     # MIT License
-├── README.md                   # This documentation
-├── WebHostService.ts           # Main service implementation
-├── StaticResource.ts           # Static file resource
-├── SPAResource.ts              # SPA resource implementation
-</parameter>
-<parameter=multiple>
-False
-├── WsRpcResource.ts            # WebSocket RPC resource implementation
-├── auth.ts                     # Authentication utilities
-├── types.ts                    # Type definitions
-├── schema.ts                   # Configuration schemas
-├── createWsRPCClient.ts        # WebSocket RPC client
-├── commands.ts                 # Command exports
-├── commands/
-│   ├── webhost-show.ts        # /webhost show command
-│   ├── webhost-start.ts       # /webhost start command
-│   └── webhost-stop.ts        # /webhost stop command
-└── vitest.config.ts            # Vitest configuration
-```
-
-## Type Exports
-
-The package exports the following types:
-
-- `WebResource`: Interface for web resources
-- `ParsedWebHostAuthConfig`: Type for parsed authentication configuration
-- `ParsedWebHostConfig`: Type for parsed web host configuration
-- `BunRouter`: Router interface for registering handlers
-- `BunRequest`: Request object passed to route handlers
-- `BunResponse`: Response utilities
-- `BunWebSocket`: WebSocket wrapper interface
-- `RouteHandler`: Route handler function type
-- `WebSocketHandler`: WebSocket handler interface
-- `StaticOptions`: Static file serving options
-
-## Schema Exports
-
-The package exports the following Zod schemas:
-
-- `WebHostConfigSchema`: Web host configuration schema
-- `WebHostAuthConfigSchema`: Authentication configuration schema
-- `staticResourceConfigSchema`: Static resource configuration schema
-- `spaResourceConfigSchema`: SPA resource configuration schema
 
 ## License
 
