@@ -122,9 +122,9 @@ describe("WebHost Integration Tests", () => {
 
       expect(endpoint.path).toBe("/api/rpc");
       expect(Object.keys(endpoint.methods)).toHaveLength(3);
-      expect(endpoint.methods.ping.type).toBe("query");
-      expect(endpoint.methods.double.type).toBe("mutation");
-      expect(endpoint.methods.stream.type).toBe("stream");
+      expect(endpoint.methods.ping!.type).toBe("query");
+      expect(endpoint.methods.double!.type).toBe("mutation");
+      expect(endpoint.methods.stream!.type).toBe("stream");
     });
   });
 
