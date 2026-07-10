@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
 import StaticResource, { staticResourceConfigSchema } from "./StaticResource";
-import type { BunRouter } from "./types";
+import { beforeEach,describe,expect,it,mock } from "bun:test";
+import { BunRouter } from "./types";
 
 describe("StaticResource", () => {
   let mockRouter: BunRouter;
+  let resource: StaticResource;
 
   beforeEach(() => {
     mockRouter = {
@@ -13,7 +14,7 @@ describe("StaticResource", () => {
       delete: mock(),
       ws: mock(),
       static: mock(),
-      fallback: mock(),
+      fallback: mock()
     };
   });
 
@@ -25,7 +26,7 @@ describe("StaticResource", () => {
         description: "Static files",
         indexFile: "index.html",
         notFoundFile: "404.html",
-        prefix: "/static",
+        prefix: "/static"
       };
 
       const resource = new StaticResource(config);
@@ -41,16 +42,20 @@ describe("StaticResource", () => {
         description: "Static files",
         indexFile: "index.html",
         notFoundFile: "404.html",
-        prefix: "/static",
+        prefix: "/static"
       };
 
       const resource = new StaticResource(config);
-      resource.register(mockRouter);
+      await resource.register(mockRouter);
 
-      expect(mockRouter.static).toHaveBeenCalledWith("/static", "/path/to/static", {
-        index: "index.html",
-        notFound: "404.html",
-      });
+      expect(mockRouter.static).toHaveBeenCalledWith(
+        "/static",
+        "/path/to/static",
+        {
+          index: "index.html",
+          notFound: "404.html"
+        }
+      );
     });
 
     it("should register without not found handler when notFoundFile is not provided", async () => {
@@ -59,16 +64,20 @@ describe("StaticResource", () => {
         root: "/path/to/static",
         description: "Static files",
         indexFile: "index.html",
-        prefix: "/static",
+        prefix: "/static"
       };
 
       const resource = new StaticResource(config);
-      resource.register(mockRouter);
+      await resource.register(mockRouter);
 
-      expect(mockRouter.static).toHaveBeenCalledWith("/static", "/path/to/static", {
-        index: "index.html",
-        notFound: undefined,
-      });
+      expect(mockRouter.static).toHaveBeenCalledWith(
+        "/static",
+        "/path/to/static",
+        {
+          index: "index.html",
+          notFound: undefined
+        }
+      );
     });
   });
 
@@ -80,8 +89,8 @@ describe("StaticResource", () => {
         description: "Static files",
         indexFile: "index.html",
         notFoundFile: "404.html",
-        prefix: "/static",
-      } as const;
+        prefix: "/static"
+      };
 
       const result = staticResourceConfigSchema.parse(validConfig);
       expect(result).toEqual(validConfig);
@@ -93,7 +102,7 @@ describe("StaticResource", () => {
         root: "/path/to/static",
         description: "Static files",
         indexFile: "index.html",
-        prefix: "/static",
+        prefix: "/static"
       };
 
       expect(() => staticResourceConfigSchema.parse(invalidConfig)).toThrow();
@@ -104,7 +113,7 @@ describe("StaticResource", () => {
         root: "/path/to/static",
         description: "Static files",
         indexFile: "index.html",
-        prefix: "/static",
+        prefix: "/static"
       };
 
       expect(() => staticResourceConfigSchema.parse(partialConfig)).toThrow();

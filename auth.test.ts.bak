@@ -1,35 +1,35 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { checkAuth, unauthorizedResponse } from "./auth";
+import { beforeEach,describe,expect,it,mock } from "bun:test";
 import { WebHostAuthConfigSchema } from "./schema";
-import type { BunRequest, BunResponse, BunRouter } from "./types";
+import { BunRequest, BunResponse, BunRouter } from "./types";
 
 describe("auth", () => {
-  let _mockRouter: BunRouter;
+  let mockRouter: BunRouter;
   let mockRequest: Partial<BunRequest>;
   let mockResponse: Partial<BunResponse>;
 
   beforeEach(() => {
-    _mockRouter = {
+    mockRouter = {
       get: mock(),
       post: mock(),
       put: mock(),
       delete: mock(),
       ws: mock(),
       static: mock(),
-      fallback: mock(),
+      fallback: mock()
     };
 
     mockRequest = {
-      headers: new Headers(),
+      headers: new Headers()
     };
 
     mockResponse = {
       json: mock((data, status = 200) => {
         return new Response(JSON.stringify(data), {
           status,
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json" }
         });
-      }),
+      })
     };
   });
 
@@ -39,12 +39,12 @@ describe("auth", () => {
         users: {
           user1: {
             password: "password1",
-            bearerToken: "token1",
+            bearerToken: "token1"
           },
           user2: {
-            password: "password2",
-          },
-        },
+            password: "password2"
+          }
+        }
       };
 
       const result = WebHostAuthConfigSchema.parse(validConfig);
@@ -55,9 +55,9 @@ describe("auth", () => {
       const invalidConfig = {
         users: {
           user1: {
-            password: 123,
-          },
-        },
+            password: 123
+          }
+        }
       };
 
       expect(() => WebHostAuthConfigSchema.parse(invalidConfig)).toThrow();
@@ -71,22 +71,22 @@ describe("auth", () => {
   });
 
   describe("registerAuth", () => {
-    let _config: any;
+    let config: any;
 
     beforeEach(() => {
-      _config = {
+      config = {
         users: {
           user1: {
             password: "password1",
-            bearerToken: "token1",
+            bearerToken: "token1"
           },
           user2: {
-            password: "password2",
+            password: "password2"
           },
           user3: {
-            bearerToken: "token3",
-          },
-        },
+            bearerToken: "token3"
+          }
+        }
       };
     });
   });
@@ -99,15 +99,15 @@ describe("auth", () => {
         users: {
           user1: {
             password: "password1",
-            bearerToken: "token1",
+            bearerToken: "token1"
           },
           user2: {
-            password: "password2",
+            password: "password2"
           },
           user3: {
-            bearerToken: "token3",
-          },
-        },
+            bearerToken: "token3"
+          }
+        }
       };
     });
 
@@ -118,7 +118,7 @@ describe("auth", () => {
 
     it("should accept valid bearer token", () => {
       mockRequest.headers = new Headers({
-        authorization: "Bearer token1",
+        "authorization": "Bearer token1"
       });
 
       const result = checkAuth(mockRequest as BunRequest, config);
@@ -127,7 +127,7 @@ describe("auth", () => {
 
     it("should reject invalid bearer token", () => {
       mockRequest.headers = new Headers({
-        authorization: "Bearer invalid_token",
+        "authorization": "Bearer invalid_token"
       });
 
       const result = checkAuth(mockRequest as BunRequest, config);
@@ -137,7 +137,7 @@ describe("auth", () => {
     it("should accept valid basic auth credentials", () => {
       const encoded = Buffer.from("user1:password1").toString("base64");
       mockRequest.headers = new Headers({
-        authorization: `Basic ${encoded}`,
+        "authorization": `Basic ${encoded}`
       });
 
       const result = checkAuth(mockRequest as BunRequest, config);
@@ -147,7 +147,7 @@ describe("auth", () => {
     it("should reject invalid basic auth credentials", () => {
       const encoded = Buffer.from("user1:wrongpassword").toString("base64");
       mockRequest.headers = new Headers({
-        authorization: `Basic ${encoded}`,
+        "authorization": `Basic ${encoded}`
       });
 
       const result = checkAuth(mockRequest as BunRequest, config);
@@ -157,7 +157,7 @@ describe("auth", () => {
     it("should reject malformed basic auth", () => {
       const encoded = Buffer.from("malformed").toString("base64");
       mockRequest.headers = new Headers({
-        authorization: `Basic ${encoded}`,
+        "authorization": `Basic ${encoded}`
       });
 
       const result = checkAuth(mockRequest as BunRequest, config);
@@ -167,7 +167,7 @@ describe("auth", () => {
     it("should reject basic auth with missing password", () => {
       const encoded = Buffer.from("user1").toString("base64");
       mockRequest.headers = new Headers({
-        authorization: `Basic ${encoded}`,
+        "authorization": `Basic ${encoded}`
       });
 
       const result = checkAuth(mockRequest as BunRequest, config);
@@ -176,7 +176,7 @@ describe("auth", () => {
 
     it("should handle user with only bearer token", () => {
       mockRequest.headers = new Headers({
-        authorization: "Bearer token3",
+        "authorization": "Bearer token3"
       });
 
       const result = checkAuth(mockRequest as BunRequest, config);
@@ -186,7 +186,7 @@ describe("auth", () => {
     it("should handle user with only password", () => {
       const encoded = Buffer.from("user2:password2").toString("base64");
       mockRequest.headers = new Headers({
-        authorization: `Basic ${encoded}`,
+        "authorization": `Basic ${encoded}`
       });
 
       const result = checkAuth(mockRequest as BunRequest, config);
@@ -195,13 +195,13 @@ describe("auth", () => {
 
     it("should reject bearer token for user without token", () => {
       mockRequest.headers = new Headers({
-        authorization: "Bearer token1",
+        "authorization": "Bearer token1"
       });
 
       const configWithoutToken = {
         users: {
-          user1: { password: "password1" },
-        },
+          user1: { password: "password1" }
+        }
       };
 
       const result = checkAuth(mockRequest as BunRequest, configWithoutToken);
@@ -210,7 +210,7 @@ describe("auth", () => {
 
     it("should handle case sensitivity in authorization header", () => {
       mockRequest.headers = new Headers({
-        authorization: "bearer token1",
+        "authorization": "bearer token1"
       });
 
       const result = checkAuth(mockRequest as BunRequest, config);
@@ -220,11 +220,12 @@ describe("auth", () => {
 
   describe("unauthorizedResponse", () => {
     it("should return 401 response", () => {
-      const result = unauthorizedResponse(mockResponse as BunResponse);
+      const response = unauthorizedResponse(mockResponse as BunResponse);
 
-      expect(mockResponse.json).toHaveBeenCalledWith({ error: "Unauthorized" }, 401);
-      expect(result).toBeInstanceOf(Response);
-      expect(result.status).toBe(401);
+      expect(mockResponse.json).toHaveBeenCalledWith(
+        { error: "Unauthorized" },
+        401
+      );
     });
   });
 });

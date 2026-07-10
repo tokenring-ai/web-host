@@ -1,16 +1,17 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
 import SPAResource, { spaResourceConfigSchema } from "./SPAResource";
-import type { BunRouter } from "./types";
+import { beforeEach,describe,expect,it,mock } from "bun:test";
+import { BunRouter } from "./types";
 
 // Mock Bun.file
-void mock.module("bun", () => ({
+mock.module("bun", () => ({
   file: mock(() => ({
-    exists: mock().mockResolvedValue(true),
-  })),
+    exists: mock().mockResolvedValue(true)
+  }))
 }));
 
 describe("SPAResource", () => {
   let mockRouter: BunRouter;
+  let resource: SPAResource;
 
   beforeEach(() => {
     mockRouter = {
@@ -20,7 +21,7 @@ describe("SPAResource", () => {
       delete: mock(),
       ws: mock(),
       static: mock(),
-      fallback: mock(),
+      fallback: mock()
     };
   });
 
@@ -30,7 +31,7 @@ describe("SPAResource", () => {
         type: "spa" as const,
         file: "/path/to/index.html",
         description: "SPA Application",
-        prefix: "/app",
+        prefix: "/app"
       };
 
       const resource = new SPAResource(config);
@@ -44,11 +45,11 @@ describe("SPAResource", () => {
         type: "spa" as const,
         file: "/path/to/index.html",
         description: "SPA Application",
-        prefix: "/app",
+        prefix: "/app"
       };
 
       const resource = new SPAResource(config);
-      resource.register(mockRouter);
+      await resource.register(mockRouter);
 
       // Should register static file serving
       expect(mockRouter.static).toHaveBeenCalledWith("/app", "/path/to");
@@ -66,11 +67,11 @@ describe("SPAResource", () => {
         type: "spa" as const,
         file: "/index.html",
         description: "SPA Application",
-        prefix: "/",
+        prefix: "/"
       };
 
       const resource = new SPAResource(config);
-      resource.register(mockRouter);
+      await resource.register(mockRouter);
 
       // Should register static file serving with root directory
       expect(mockRouter.static).toHaveBeenCalled();
@@ -81,24 +82,26 @@ describe("SPAResource", () => {
         type: "spa" as const,
         file: "/path/to/index.html",
         description: "SPA Application",
-        prefix: "/app",
+        prefix: "/app"
       };
 
       const resource = new SPAResource(config);
-      resource.register(mockRouter);
+      await resource.register(mockRouter);
 
       // Get the handler for /app
-      const rootHandler = (mockRouter.get as any).mock.calls.find((call: any[]) => call[0] === "/app")[1];
+      const rootHandler = (mockRouter.get as any).mock.calls.find(
+        (call: any[]) => call[0] === "/app"
+      )[1];
 
       const mockRequest: any = {
         method: "GET",
         url: "http://localhost/app",
         path: "/app",
-        headers: new Headers(),
+        headers: new Headers()
       };
 
       const mockResponse: any = {
-        file: mock().mockResolvedValue(new Response("HTML content")),
+        file: mock().mockResolvedValue(new Response("HTML content"))
       };
 
       await rootHandler(mockRequest, mockResponse);
@@ -113,8 +116,8 @@ describe("SPAResource", () => {
         type: "spa",
         file: "/path/to/index.html",
         description: "SPA Application",
-        prefix: "/app",
-      } as const;
+        prefix: "/app"
+      };
 
       const result = spaResourceConfigSchema.parse(validConfig);
       expect(result).toEqual(validConfig);
@@ -125,7 +128,7 @@ describe("SPAResource", () => {
         type: "invalid",
         file: "/path/to/index.html",
         description: "SPA Application",
-        prefix: "/app",
+        prefix: "/app"
       };
 
       expect(() => spaResourceConfigSchema.parse(invalidConfig)).toThrow();
@@ -135,7 +138,7 @@ describe("SPAResource", () => {
       const partialConfig = {
         file: "/path/to/index.html",
         description: "SPA Application",
-        prefix: "/app",
+        prefix: "/app"
       };
 
       expect(() => spaResourceConfigSchema.parse(partialConfig)).toThrow();
@@ -146,7 +149,7 @@ describe("SPAResource", () => {
         type: "spa",
         file: "/path/to/index.html",
         description: "SPA Application",
-        prefix: "/app",
+        prefix: "/app"
       };
 
       const result = spaResourceConfigSchema.parse(config);

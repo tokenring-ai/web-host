@@ -10,5 +10,9 @@ export {
 export type { ParsedWebHostAuthConfig, ParsedWebHostConfig } from "./schema.ts";
 export { WebHostAuthConfigSchema, WebHostConfigSchema } from "./schema.ts";
 export type { WebResource } from "./types.ts";
-export { default as WebHostService } from "./WebHostService.ts";
+
+import WebHostService from "./WebHostService.ts";
+
+export { WebHostService };
+export default WebHostService;
 export { default as WsRpcResource } from "./WsRpcResource.ts";

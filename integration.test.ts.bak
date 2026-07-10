@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
-import type TokenRingApp from "@tokenring-ai/app";
+import TokenRingApp from "@tokenring-ai/app";
+import { afterEach,beforeEach,describe,expect,it,mock,spyOn } from "bun:test";
 import createTestingApp from "@tokenring-ai/app/test/createTestingApp.test";
 import { createRPCEndpoint } from "@tokenring-ai/rpc/createRPCEndpoint";
 import { z } from "zod";
@@ -7,10 +7,19 @@ import SPAResource, { spaResourceConfigSchema } from "./SPAResource";
 import StaticResource, { staticResourceConfigSchema } from "./StaticResource";
 import WebHostService from "./WebHostService";
 
+// Mock Bun globally before anything else
 const mockServer = {
   hostname: "127.0.0.1",
   port: 3000,
-  stop: mock(),
+  stop: mock()
+};
+
+// Define Bun global for the test environment
+(global as any).Bun = {
+  serve: mock(() => mockServer),
+  file: mock((path: string) => ({
+    exists: mock().mockResolvedValue(true)
+  }))
 };
 
 describe("WebHost Integration Tests", () => {
@@ -18,21 +27,14 @@ describe("WebHost Integration Tests", () => {
   let mockApp: TokenRingApp;
 
   beforeEach(() => {
-    mock.clearAllMocks();
-    mockServer.stop.mockClear();
-
-    // Bun.serve / Bun.file are readonly on global Bun — spy instead of reassigning
-    spyOn(Bun, "serve").mockImplementation((() => mockServer) as unknown as typeof Bun.serve);
-    spyOn(Bun, "file").mockImplementation(((_path: string) => ({
-      exists: mock().mockResolvedValue(true),
-    })) as unknown as typeof Bun.file);
-
     mockApp = createTestingApp();
     spyOn(mockApp, "serviceOutput");
+    mock.clearAllMocks();
+    mockServer.stop.mockClear();
   });
 
   afterEach(() => {
-    mock.restore();
+    mock.clearAllMocks();
   });
 
   describe("Complete WebHost Setup", () => {
@@ -42,8 +44,8 @@ describe("WebHost Integration Tests", () => {
         port: 3000,
         auth: {
           users: {
-            testuser: { password: "testpass", bearerToken: "testtoken" },
-          },
+            testuser: { password: "testpass", bearerToken: "testtoken" }
+          }
         },
         resources: {
           static: staticResourceConfigSchema.parse({
@@ -52,15 +54,15 @@ describe("WebHost Integration Tests", () => {
             description: "Static files",
             indexFile: "index.html",
             notFoundFile: "404.html",
-            prefix: "/static",
+            prefix: "/static"
           }),
           spa: spaResourceConfigSchema.parse({
             type: "spa",
             file: "/path/to/app/index.html",
             description: "SPA application",
-            prefix: "/app",
-          }),
-        },
+            prefix: "/app"
+          })
+        }
       };
 
       service = new WebHostService(mockApp, config);
@@ -69,9 +71,13 @@ describe("WebHost Integration Tests", () => {
       service.registerResource("static", new StaticResource(config.resources.static));
       service.registerResource("spa", new SPAResource(config.resources.spa));
 
-      await service.listen();
+      const abortController = new AbortController();
+      await service.listen;
 
-      expect(mockApp.serviceOutput).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("Web Host listening at"));
+      expect(mockApp.serviceOutput).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("Web Host listening at")
+      );
     });
 
     it("should integrate JSON-RPC with complete endpoint", () => {
@@ -82,34 +88,34 @@ describe("WebHost Integration Tests", () => {
           ping: {
             type: "query" as const,
             input: z.object({ message: z.string() }),
-            result: z.object({ pong: z.string() }),
+            result: z.object({ pong: z.string() })
           },
           double: {
             type: "mutation" as const,
             input: z.object({ number: z.number() }),
-            result: z.object({ result: z.number() }),
+            result: z.object({ result: z.number() })
           },
           stream: {
             type: "stream" as const,
             input: z.object({ count: z.number() }),
-            result: z.object({ value: z.number() }),
-          },
-        },
+            result: z.object({ value: z.number() })
+          }
+        }
       };
 
       const implementation = {
-        ping: async (args: any, _app: any) => ({
-          pong: `Hello ${args.message}`,
+        ping: async (args: any, app: any) => ({
+          pong: `Hello ${args.message}`
         }),
-        double: async (args: any, _app: any) => ({
-          result: args.number * 2,
+        double: async (args: any, app: any) => ({
+          result: args.number * 2
         }),
-        stream: async function* (args: any, _app: any, signal: AbortSignal) {
+        stream: async function* (args: any, app: any, signal: AbortSignal) {
           for (let i = 0; i < args.count; i++) {
             if (signal.aborted) break;
             yield { value: i };
           }
-        },
+        }
       };
 
       const endpoint = createRPCEndpoint(schemas, implementation);
@@ -132,13 +138,17 @@ describe("WebHost Integration Tests", () => {
       service = new WebHostService(mockApp, config);
 
       const failingResource = {
-        register: mock().mockRejectedValue(new Error("Registration failed")),
+        register: mock().mockRejectedValue(new Error("Registration failed"))
       };
 
       service.registerResource("failing", failingResource);
 
-      await expect(service.listen()).rejects.toThrow("Registration failed");
+      const abortController = new AbortController();
+
+      await expect(service.listen)
+        .rejects.toThrow("Registration failed");
     });
+
   });
 
   describe("URL Generation Integration", () => {
@@ -156,6 +166,7 @@ describe("WebHost Integration Tests", () => {
 
     it("should handle URL generation when server is started", async () => {
       const config = {
+
         host: "127.0.0.1",
         port: 3000,
       };
@@ -170,6 +181,7 @@ describe("WebHost Integration Tests", () => {
   describe("Resource Management Integration", () => {
     it("should manage multiple resources correctly", () => {
       service = new WebHostService(mockApp, {
+
         host: "127.0.0.1",
         port: 3000,
       });
@@ -199,8 +211,8 @@ describe("WebHost Integration Tests", () => {
         port: 3000,
         auth: {
           users: {
-            user1: { password: "pass1" },
-          },
+            user1: { password: "pass1" }
+          }
         },
         resources: {
           static: {
@@ -208,9 +220,9 @@ describe("WebHost Integration Tests", () => {
             root: "/path",
             description: "Static",
             indexFile: "index.html",
-            prefix: "/static",
-          },
-        },
+            prefix: "/static"
+          }
+        }
       };
 
       expect(() => new WebHostService(mockApp, validConfig)).not.toThrow();
@@ -219,7 +231,7 @@ describe("WebHost Integration Tests", () => {
     it("should handle minimal configuration", () => {
       const minimalConfig = {
         host: "127.0.0.1",
-        port: 3000,
+        port: 3000
       };
 
       expect(() => new WebHostService(mockApp, minimalConfig)).not.toThrow();
