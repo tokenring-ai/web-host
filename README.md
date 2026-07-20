@@ -10,7 +10,8 @@ The `@tokenring-ai/web-host` package serves as the web foundation for
 TokenRing applications. It provides a high-performance web server built on
 **Bun.serve** with a resource registration system that allows different
 packages to extend web functionality through plugins. The package supports
-static file serving, SPA routing, WebSocket RPC, and authentication.
+static file serving, SPA routing, WebSocket RPC, and username/password
+authentication for RPC sessions.
 
 ## Installation
 
@@ -28,8 +29,7 @@ bun add @tokenring-ai/web-host
 - **SPA Support**: Single Page Application routing with fallback for
   client-side navigation
 - **WebSocket RPC**: Real-time WebSocket-based RPC with streaming support
-- **Authentication**: Basic and Bearer token authentication with per-user
-  credentials
+- **Authentication**: Username/password login over the WebSocket RPC session
 - **Plugin Integration**: Seamless integration with TokenRing plugin system
 - **Automatic RPC Registration**: Auto-creates WebSocket RPC resource from
   RpcService endpoints
@@ -116,44 +116,86 @@ type ParsedWebHostConfig = z.output<typeof WebHostConfigSchema>;
 ### WebHostConfig Schema
 
 ```typescript
-const WebHostConfigSchema = z
-  .object({
-    autoStart: z.boolean().default(false),
-    host: z.string().default("127.0.0.1"),
-    port: z.number().default(0),
-    auth: WebHostAuthConfigSchema.exactOptional(),
-  })
-  .prefault({});
+const WebHostConfigSchema = z.object({
+  host: z.string().default("127.0.0.1"),
+  port: z.number().int().min(0).max(65535).default(0),
+  auth: WebHostAuthConfigSchema,
+});
 ```
 
 **Configuration Options:**
 
-| Option      | Type       | Required | Default       | Description                                                                     |
-|-------------|------------|----------|---------------|---------------------------------------------------------------------------------|
-| `autoStart` | boolean    | No       | `false`       | Whether to automatically start the server when plugin starts                    |
-| `host`      | string     | No       | `127.0.0.1`   | Host address to bind to                                                         |
-| `port`      | number     | No       | `0`           | Port number. If 0 or not specified, an available port is automatically assigned |
-| `auth`      | AuthConfig | No       | -             | Authentication configuration                                                    |
+| Option | Type       | Required | Default     | Description                                                                     |
+|--------|------------|----------|-------------|---------------------------------------------------------------------------------|
+| `host` | string     | No       | `127.0.0.1` | Host address to bind to                                                         |
+| `port` | number     | No       | `0`         | Port number. If 0 or not specified, an available port is automatically assigned |
+| `auth` | AuthConfig | Yes      | -           | **Required.** Username/password credentials for WebSocket RPC login             |
 
 ### AuthConfig Schema
 
 ```typescript
 const WebHostAuthConfigSchema = z.object({
-  users: z.record(z.string(), z.object({
-    password: z.string().exactOptional(),
-    bearerToken: z.string().exactOptional(),
-  }))
+  users: z.record(
+    z.string(),
+    z.object({
+      password: z.string(),
+    }),
+  ),
 });
 ```
 
-| Option        | Type   | Description                                     |
-|---------------|--------|-------------------------------------------------|
-| `users`       | Record | Map of usernames to credentials                 |
-| `password`    | string | Optional password for Basic authentication      |
-| `bearerToken` | string | Optional bearer token for Bearer authentication |
+| Option     | Type   | Description                     |
+|------------|--------|---------------------------------|
+| `users`    | Record | Map of usernames to credentials |
+| `password` | string | Password for that username      |
 
-**Note:** Each user can have either a password, a bearer token, or both. Users
-without either credential cannot authenticate.
+`auth` is required. Every WebSocket RPC session must authenticate with a
+username and password before calling other methods. Authentication is performed
+with the reserved JSON-RPC method `auth` over the open WebSocket (not HTTP
+Basic or Bearer headers).
+
+**Auth request:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "auth",
+  "params": {
+    "username": "admin",
+    "password": "secret123"
+  }
+}
+```
+
+**Auth success:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "authenticated": true,
+    "username": "admin"
+  }
+}
+```
+
+**Auth failure / unauthorized:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32001,
+    "message": "Invalid username or password"
+  }
+}
+```
+
+Unauthenticated method calls receive error code `-32001` until a successful
+`auth` call completes on that WebSocket session.
 
 ### StaticResource Config Schema
 
@@ -199,17 +241,55 @@ const spaResourceConfigSchema = z.object({
 
 ```yaml
 webHost:
-  autoStart: true
   host: "127.0.0.1"
   port: 3000
   auth:
     users:
       admin:
         password: "secret123"
-        bearerToken: "admin-token-xyz"
       user1:
         password: "user-pass-123"
 ```
+
+## WebSocket RPC Client
+
+Use `createWsRPCClient` to call server RPC methods over `/rpc:ws`. Auth is
+**required** on both the server and the client: every connection must log in
+with username/password before other RPC methods are allowed.
+
+```typescript
+import { createWsRPCClient } from "@tokenring-ai/web-host";
+import type { RPCSchema } from "@tokenring-ai/rpc/types";
+
+const wsUrl = new URL("/rpc:ws", "http://127.0.0.1:3000");
+
+const client = createWsRPCClient(wsUrl, mySchema, {
+  username: "admin",
+  password: "secret123",
+});
+
+// Auth is sent automatically after the socket opens, before this call.
+const result = await client.someMethod({ /* params */ });
+```
+
+### Signature
+
+```typescript
+function createWsRPCClient<T extends RPCSchema>(
+  wsUrl: URL,
+  schemas: T,
+  auth: { username: string; password: string },
+): { [K in keyof T["methods"]]: FunctionTypeOfRPCCall<T, K> };
+```
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `wsUrl` | `URL` | WebSocket endpoint (typically `/rpc:ws`) |
+| `schemas` | `RPCSchema` | RPC method schemas for type-safe calls |
+| `auth` | `{ username, password }` | **Required.** Sent via the `auth` RPC after connect (and after reconnect) before other methods |
+
+Sockets are cached by URL: multiple clients for the same URL share one
+WebSocket, and a successful login is reused for that connection.
 
 ## License
 

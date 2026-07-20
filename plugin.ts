@@ -31,11 +31,9 @@ export default {
     const rpcService = app.getService(RpcService);
 
     if (rpcService) {
-      webHostService.registerResource(`Websocket RPC`, new WsRpcResource(app, "/rpc:ws"));
+      webHostService.registerResource(`Websocket RPC`, new WsRpcResource(app, "/rpc:ws", config.webHost.auth));
     }
-    if (config.webHost.autoStart) {
-      await webHostService.listen();
-    }
+    await webHostService.listen();
   },
   async reconfigure(app, config) {
     await app.requireService(WebHostService).reconfigure(config.webHost);

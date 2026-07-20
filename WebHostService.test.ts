@@ -29,7 +29,11 @@ describe("WebHostService", () => {
     mockConfig = {
       host: "127.0.0.1",
       port: 3000,
-      auth: undefined,
+      auth: {
+        users: {
+          testuser: { password: "testpass" },
+        },
+      },
       resources: {},
     };
     service = new WebHostService(mockApp, mockConfig);

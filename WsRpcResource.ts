@@ -3,6 +3,7 @@ import { RpcService } from "@tokenring-ai/rpc";
 import type { RpcMethod } from "@tokenring-ai/rpc/types";
 import formatError from "@tokenring-ai/utility/error/formatError";
 import { z } from "zod";
+import type { ParsedWebHostAuthConfig } from "./schema.ts";
 import type { BunRouter, BunWebSocket, WebResource } from "./types.ts";
 
 const jsonBodySchema = z.object({
@@ -16,27 +17,45 @@ const jsonBodyIdSchema = z.object({
   id: z.number(),
 });
 
+const authParamsSchema = z.object({
+  username: z.string(),
+  password: z.string(),
+});
+
+type WsData = {
+  abortController: AbortController;
+  authenticated: boolean;
+  username: string | null;
+};
+
 export default class WsRpcResource implements WebResource {
   constructor(
     private app: TokenRingApp,
     private jsonRpcEndpoint: string,
+    private auth: ParsedWebHostAuthConfig,
   ) {}
 
   register(router: BunRouter) {
     const rpcService = this.app.requireService(RpcService);
+    const authConfig = this.auth;
+
     router.ws(this.jsonRpcEndpoint, {
       open: (ws: BunWebSocket) => {
-        ws.data = {
+        const data: WsData = {
           abortController: new AbortController(),
+          authenticated: false,
+          username: null,
         };
+        ws.data = data;
       },
 
       close: (ws: BunWebSocket) => {
-        ws.data.abortController?.abort();
+        (ws.data as WsData | undefined)?.abortController.abort();
       },
 
       message: async (ws: BunWebSocket, message: string | Buffer) => {
         const messageStr = typeof message === "string" ? message : message.toString();
+        const wsData = ws.data as WsData;
 
         let data: unknown;
         try {
@@ -73,6 +92,45 @@ export default class WsRpcResource implements WebResource {
             return;
           }
 
+          // Username/password login over the WebSocket session (required).
+          if (methodName === "auth") {
+            const { username, password } = authParamsSchema.parse(rpcParams);
+            if (authConfig.users[username]?.password !== password) {
+              wsData.authenticated = false;
+              wsData.username = null;
+              ws.send(
+                JSON.stringify({
+                  jsonrpc: "2.0",
+                  id,
+                  error: { code: -32001, message: "Invalid username or password" },
+                }),
+              );
+              return;
+            }
+
+            wsData.authenticated = true;
+            wsData.username = username;
+            ws.send(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id,
+                result: { authenticated: true, username },
+              }),
+            );
+            return;
+          }
+
+          if (!wsData.authenticated) {
+            ws.send(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id,
+                error: { code: -32001, message: "Unauthorized. Call auth with username and password first." },
+              }),
+            );
+            return;
+          }
+
           const method = rpcService.getMethod(methodName);
 
           if (!method) {
@@ -90,7 +148,7 @@ export default class WsRpcResource implements WebResource {
 
           if (method.type === "stream") {
             try {
-              const result = method.execute(validatedParams, this.app, ws.data.abortController.signal) as AsyncGenerator<unknown>;
+              const result = method.execute(validatedParams, this.app, wsData.abortController.signal) as AsyncGenerator<unknown>;
               for await (const event of result) {
                 ws.send(JSON.stringify({ jsonrpc: "2.0", id, result: event }));
               }

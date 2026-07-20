@@ -3,7 +3,7 @@ import type TokenRingApp from "@tokenring-ai/app";
 import createTestingApp from "@tokenring-ai/app/test/createTestingApp.test";
 import { createRPCEndpoint } from "@tokenring-ai/rpc/createRPCEndpoint";
 import { z } from "zod";
-import SPAResource, { spaResourceConfigSchema } from "./SPAResource";
+import FallbackResource, { FallbackResourceConfigSchema } from "./FallbackResource.ts";
 import StaticResource, { staticResourceConfigSchema } from "./StaticResource";
 import WebHostService from "./WebHostService";
 
@@ -42,7 +42,7 @@ describe("WebHost Integration Tests", () => {
         port: 3000,
         auth: {
           users: {
-            testuser: { password: "testpass", bearerToken: "testtoken" },
+            testuser: { password: "testpass" },
           },
         },
         resources: {
@@ -54,7 +54,7 @@ describe("WebHost Integration Tests", () => {
             notFoundFile: "404.html",
             prefix: "/static",
           }),
-          spa: spaResourceConfigSchema.parse({
+          spa: FallbackResourceConfigSchema.parse({
             type: "spa",
             file: "/path/to/app/index.html",
             description: "SPA application",
@@ -67,7 +67,7 @@ describe("WebHost Integration Tests", () => {
 
       // Register resources
       service.registerResource("static", new StaticResource(config.resources.static));
-      service.registerResource("spa", new SPAResource(config.resources.spa));
+      service.registerResource("spa", new FallbackResource(config.resources.spa));
 
       await service.listen();
 
@@ -127,6 +127,11 @@ describe("WebHost Integration Tests", () => {
       const config = {
         host: "127.0.0.1",
         port: 3000,
+        auth: {
+          users: {
+            testuser: { password: "testpass" },
+          },
+        },
       };
 
       service = new WebHostService(mockApp, config);
@@ -146,24 +151,17 @@ describe("WebHost Integration Tests", () => {
       const config = {
         host: "127.0.0.1",
         port: 3000,
+        auth: {
+          users: {
+            testuser: { password: "testpass" },
+          },
+        },
       };
 
       const service1 = new WebHostService(mockApp, config);
       await service1.listen();
       // Note: The mock server always returns 127.0.0.1:3000
       expect(service1.getURL().toString()).toBe("http://127.0.0.1:3000/");
-    });
-
-    it("should handle URL generation when server is started", async () => {
-      const config = {
-        host: "127.0.0.1",
-        port: 3000,
-      };
-
-      const serviceWithServer = new WebHostService(mockApp, config);
-      await serviceWithServer.listen();
-
-      expect(serviceWithServer.getURL().toString()).toBe("http://127.0.0.1:3000/");
     });
   });
 
@@ -172,6 +170,11 @@ describe("WebHost Integration Tests", () => {
       service = new WebHostService(mockApp, {
         host: "127.0.0.1",
         port: 3000,
+        auth: {
+          users: {
+            testuser: { password: "testpass" },
+          },
+        },
       });
 
       const resource1 = { register: mock() };
@@ -220,6 +223,11 @@ describe("WebHost Integration Tests", () => {
       const minimalConfig = {
         host: "127.0.0.1",
         port: 3000,
+        auth: {
+          users: {
+            testuser: { password: "testpass" },
+          },
+        },
       };
 
       expect(() => new WebHostService(mockApp, minimalConfig)).not.toThrow();

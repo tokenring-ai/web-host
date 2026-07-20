@@ -1,8 +1,9 @@
+export type { WsRPCClientAuth } from "./createWsRPCClient.ts";
 export { default as createWsRPCClient } from "./createWsRPCClient.ts";
 export {
   default as SPAResource,
-  spaResourceConfigSchema,
-} from "./SPAResource.ts";
+  FallbackResourceConfigSchema,
+} from "./FallbackResource.ts";
 export {
   default as StaticResource,
   staticResourceConfigSchema,

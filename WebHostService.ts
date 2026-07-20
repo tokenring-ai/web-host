@@ -1,9 +1,9 @@
 import type TokenRingApp from "@tokenring-ai/app";
 import type { TokenRingService } from "@tokenring-ai/app/types";
 import { ConfigurationError } from "@tokenring-ai/app/types";
+import { deepEqual } from "@tokenring-ai/one-frontend/src/features/config/values";
 import { stripUndefinedKeys } from "@tokenring-ai/utility/object/stripObject";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
-import { checkAuth, unauthorizedResponse } from "./auth.ts";
 import type { ParsedWebHostConfig } from "./schema.ts";
 import type { BunRequest, BunResponse, BunRouter, BunWebSocket, RouteHandler, StaticOptions, WebResource, WebSocketHandler } from "./types.ts";
 
@@ -96,16 +96,12 @@ export default class WebHostService implements TokenRingService {
   registerResource = this.resources.set;
   getResourceEntries = this.resources.entriesArray;
   private router = new Router();
-  private server: any;
+  private server: Bun.Server<unknown> | null = null;
 
   constructor(
     private app: TokenRingApp,
-    private config: Omit<ParsedWebHostConfig, "autoStart">,
+    private config: ParsedWebHostConfig,
   ) {}
-
-  get listening() {
-    return !!this.server;
-  }
 
   async listen() {
     if (this.server) {
@@ -136,21 +132,16 @@ export default class WebHostService implements TokenRingService {
   }
 
   async reconfigure(config: ParsedWebHostConfig) {
-    const wasListening = this.listening;
-    if (wasListening) {
-      this.stop();
-    }
+    if (deepEqual(config, this.config)) return;
+    await this.server?.stop();
 
     this.config = config;
-
-    if (config.autoStart || wasListening) {
-      await this.listen();
-    }
+    await this.listen();
   }
 
-  stop() {
+  async stop() {
     if (this.server) {
-      this.server.stop();
+      await this.server.stop();
       this.server = null;
     }
   }
@@ -167,24 +158,14 @@ export default class WebHostService implements TokenRingService {
     const wsRoutes = this.router.getWsRoutes();
     const staticRoutes = this.router.getStaticRoutes();
     const fallback = this.router.getFallback();
-    const authConfig = this.config.auth;
 
     return async (request: Request, server: Bun.Server<Context>): Promise<Response | undefined> => {
       const url = new URL(request.url);
       const path = url.pathname;
 
-      // Check if this is a WebSocket upgrade request
+      // Check if this is a WebSocket upgrade request.
+      // Auth for RPC is handled inside WsRpcResource (username/password over the socket).
       if (wsRoutes.has(path) && request.headers.get("upgrade") === "websocket") {
-        // Check auth if configured
-        if (authConfig) {
-          const bunRequest = this.wrapRequest(request);
-          const username = checkAuth(bunRequest, authConfig);
-          if (!username) {
-            const bunResponse = this.createResponseHelper();
-            return unauthorizedResponse(bunResponse);
-          }
-        }
-
         // Upgrade to WebSocket
         const success = server.upgrade(request, {
           data: {
@@ -205,16 +186,6 @@ export default class WebHostService implements TokenRingService {
       // Wrap request and response utilities
       const bunRequest = this.wrapRequest(request);
       const bunResponse = this.createResponseHelper();
-
-      // Check authentication if configured
-      if (authConfig) {
-        const username = checkAuth(bunRequest, authConfig);
-        if (!username) {
-          return unauthorizedResponse(bunResponse);
-        }
-        // Attach user to request for use in handlers
-        //(bunRequest as any).user = username;
-      }
 
       // Try static file routes first
       for (const { prefix, root, options } of staticRoutes) {
