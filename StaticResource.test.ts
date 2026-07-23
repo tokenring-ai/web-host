@@ -75,9 +75,7 @@ describe("StaticResource", () => {
   describe("staticResourceConfigSchema", () => {
     it("should validate valid config", () => {
       const validConfig = {
-        type: "static",
         root: "/path/to/static",
-        description: "Static files",
         indexFile: "index.html",
         notFoundFile: "404.html",
         prefix: "/static",
@@ -89,9 +87,7 @@ describe("StaticResource", () => {
 
     it("should reject invalid config", () => {
       const invalidConfig = {
-        type: "invalid",
-        root: "/path/to/static",
-        description: "Static files",
+        root: 123,
         indexFile: "index.html",
         prefix: "/static",
       };
@@ -102,8 +98,6 @@ describe("StaticResource", () => {
     it("should require all required fields", () => {
       const partialConfig = {
         root: "/path/to/static",
-        description: "Static files",
-        indexFile: "index.html",
         prefix: "/static",
       };
 

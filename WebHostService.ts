@@ -1,7 +1,8 @@
 import type TokenRingApp from "@tokenring-ai/app";
 import type { TokenRingService } from "@tokenring-ai/app/types";
 import { ConfigurationError } from "@tokenring-ai/app/types";
-import { deepEqual } from "@tokenring-ai/one-frontend/src/features/config/values";
+
+import { deepEqual } from "@tokenring-ai/one-frontend/src/lib/utils";
 import { stripUndefinedKeys } from "@tokenring-ai/utility/object/stripObject";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import type { ParsedWebHostConfig } from "./schema.ts";

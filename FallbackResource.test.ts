@@ -46,8 +46,7 @@ describe("FallbackResource", () => {
         const resource = new FallbackResource(config);
         resource.register(mockRouter);
 
-        // Get the handler for /app
-        const rootHandler = (mockRouter.get as any).mock.calls.find((call: any[]) => call[0] === "/app")[1];
+        const fallbackHandler = (mockRouter.fallback as any).mock.calls[0][0];
 
         const mockRequest: any = {
           method: "GET",
@@ -60,7 +59,7 @@ describe("FallbackResource", () => {
           file: mock().mockResolvedValue(new Response("HTML content")),
         };
 
-        await rootHandler(mockRequest, mockResponse);
+        await fallbackHandler(mockRequest, mockResponse);
 
         expect(mockResponse.file).toHaveBeenCalledWith("/path/to/index.html");
       });
