@@ -38,5 +38,5 @@ export default {
   async reconfigure(app, config) {
     await app.requireService(WebHostService).reconfigure(config.webHost);
   },
-  config: packageConfigSchema,
+  configSchema: packageConfigSchema,
 } satisfies TokenRingPlugin<typeof packageConfigSchema>;
