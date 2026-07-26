@@ -1,4 +1,5 @@
 import type { FunctionTypeOfRPCCall, RPCSchema } from "@tokenring-ai/rpc/types";
+import EnhancedMap from "@tokenring-ai/utility/map/enhancedMap";
 import z from "zod";
 
 let rpcId = 0;
@@ -159,7 +160,7 @@ function getOrCreateSocketEntry(wsUrl: URL): SocketEntry {
   let entry = socketCache.get(urlKey);
   if (!entry || entry.socket.readyState === WebSocket.CLOSED || entry.socket.readyState === WebSocket.CLOSING) {
     const socket = new WebSocket(wsUrl);
-    const pendingRequests = new Map<number, PendingRequest>();
+    const pendingRequests = new EnhancedMap<number, PendingRequest>();
     const pendingStreams = new Map<number, StreamHandler>();
 
     socket.onmessage = event => {
@@ -168,8 +169,7 @@ function getOrCreateSocketEntry(wsUrl: URL): SocketEntry {
       const { id, result, error, stream } = parsed;
 
       if (pendingRequests.has(id)) {
-        const { resolve, reject } = pendingRequests.get(id)!;
-        pendingRequests.delete(id);
+        const { resolve, reject } = pendingRequests.deleteAndReturnItem(id)!;
         if (error) reject(new RPCError(error.message, error.code));
         else resolve(result);
       } else if (pendingStreams.has(id)) {
