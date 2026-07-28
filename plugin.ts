@@ -18,25 +18,24 @@ export default {
   displayName: "Web Host",
   version: packageJSON.version,
   description: packageJSON.description,
-  install(app, config) {
-    const webHostService = new WebHostService(app, config.webHost);
-    app.addServices(webHostService);
+  install(app) {
+    app.addServices(new WebHostService(app));
 
     app.waitForService(AgentCommandService, service => {
       service.addAgentCommands(...commands);
     });
   },
-  async start(app, config) {
+  async reconfigure(app, config) {
+    await app.requireService(WebHostService).reconfigure(config.webHost);
+  },
+  async start(app) {
     const webHostService = app.requireService(WebHostService);
     const rpcService = app.getService(RpcService);
 
     if (rpcService) {
-      webHostService.registerResource(`Websocket RPC`, new WsRpcResource(app, "/rpc:ws", config.webHost.auth));
+      webHostService.registerResource(`Websocket RPC`, new WsRpcResource(app, "/rpc:ws", webHostService.getAuthConfig()));
     }
     await webHostService.listen();
-  },
-  async reconfigure(app, config) {
-    await app.requireService(WebHostService).reconfigure(config.webHost);
   },
   configSchema: packageConfigSchema,
 } satisfies TokenRingPlugin<typeof packageConfigSchema>;

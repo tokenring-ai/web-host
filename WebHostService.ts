@@ -98,16 +98,31 @@ export default class WebHostService implements TokenRingService {
   getResourceEntries = this.resources.entriesArray;
   private router = new Router();
   private server: Bun.Server<unknown> | null = null;
+  private config: ParsedWebHostConfig | undefined;
 
   constructor(
     private app: TokenRingApp,
-    private config: ParsedWebHostConfig,
-  ) {}
+    config?: ParsedWebHostConfig,
+  ) {
+    if (config) this.config = config;
+  }
+
+  private requireConfig(): ParsedWebHostConfig {
+    if (!this.config) {
+      throw new ConfigurationError(this.name, "WebHostService is not configured");
+    }
+    return this.config;
+  }
+
+  getAuthConfig(): ParsedWebHostConfig["auth"] {
+    return this.requireConfig().auth;
+  }
 
   async listen() {
     if (this.server) {
       throw new ConfigurationError(this.name, "Server already listening");
     }
+    const config = this.requireConfig();
     this.router = new Router();
 
     // Register all resources
@@ -123,8 +138,8 @@ export default class WebHostService implements TokenRingService {
 
     // Start Bun server
     this.server = Bun.serve({
-      port: this.config.port,
-      hostname: this.config.host,
+      port: config.port,
+      hostname: config.host,
       fetch: fetchHandler,
       websocket: websocketHandlers,
     });
@@ -133,11 +148,16 @@ export default class WebHostService implements TokenRingService {
   }
 
   async reconfigure(config: ParsedWebHostConfig) {
-    if (deepEqual(config, this.config)) return;
-    await this.server?.stop();
+    if (this.config && deepEqual(config, this.config)) return;
 
     this.config = config;
-    await this.listen();
+
+    // Only restart the server if it is already listening; first-time bind happens in plugin start.
+    if (this.server) {
+      await this.server.stop();
+      this.server = null;
+      await this.listen();
+    }
   }
 
   async stop() {
