@@ -12,7 +12,7 @@ const help = `Displays the current web host URL and lists all registered resourc
 const inputSchema = {} as const satisfies AgentCommandInputSchema;
 
 function execute({ agent }: AgentCommandInputType<typeof inputSchema>): string {
-  const webHost = agent.requireServiceByType(WebHostService);
+  const webHost = agent.requireService(WebHostService);
 
   const resources = webHost.resources.keysArray();
 

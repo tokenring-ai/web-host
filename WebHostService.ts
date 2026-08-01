@@ -2,7 +2,7 @@ import type TokenRingApp from "@tokenring-ai/app";
 import type { TokenRingService } from "@tokenring-ai/app/types";
 import { ConfigurationError } from "@tokenring-ai/app/types";
 
-import { deepEqual } from "@tokenring-ai/one-frontend/src/lib/utils";
+import deepEqual from "@tokenring-ai/utility/object/deepEqual";
 import { stripUndefinedKeys } from "@tokenring-ai/utility/object/stripObject";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import type { ParsedWebHostConfig } from "./schema.ts";
@@ -223,7 +223,7 @@ export default class WebHostService implements TokenRingService {
           try {
             const file = Bun.file(fullPath);
             if (await file.exists()) {
-              return new Response(file);
+              return new Response(file, options?.headers ? { headers: options.headers } : undefined);
             }
           } catch {
             // File doesn't exist, continue to next handler

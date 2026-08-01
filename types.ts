@@ -127,4 +127,5 @@ export interface BunWebSocket {
 export interface StaticOptions {
   index?: string;
   notFound?: string;
+  headers?: Record<string, string>;
 }
