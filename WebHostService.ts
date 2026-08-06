@@ -1,94 +1,18 @@
 import type TokenRingApp from "@tokenring-ai/app";
 import type { TokenRingService } from "@tokenring-ai/app/types";
 import { ConfigurationError } from "@tokenring-ai/app/types";
+import EnhancedStringMap from "@tokenring-ai/utility/map/enhancedStringMap";
 
 import deepEqual from "@tokenring-ai/utility/object/deepEqual";
-import { stripUndefinedKeys } from "@tokenring-ai/utility/object/stripObject";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
+import type { Serve } from "bun";
 import type { ParsedWebHostConfig } from "./schema.ts";
-import type { BunRequest, BunResponse, BunRouter, BunWebSocket, RouteHandler, StaticOptions, WebResource, WebSocketHandler } from "./types.ts";
+import type { BunWebSocket, WebResource, WebSocketHandler } from "./types.ts";
 
 type Context = {
   path: string;
   abortController: AbortController;
 };
-
-/**
- * Router implementation that collects routes and later integrates with Bun.serve
- */
-class Router implements BunRouter {
-  private routes: Map<string, Map<string, RouteHandler>> = new Map();
-  private wsRoutes: Map<string, WebSocketHandler> = new Map();
-  private staticRoutes: Array<{
-    prefix: string;
-    root: string;
-    options?: StaticOptions;
-  }> = [];
-  private fallbackHandler?: RouteHandler;
-
-  get(path: string, handler: RouteHandler): void {
-    this.addRoute("GET", path, handler);
-  }
-
-  post(path: string, handler: RouteHandler): void {
-    this.addRoute("POST", path, handler);
-  }
-
-  put(path: string, handler: RouteHandler): void {
-    this.addRoute("PUT", path, handler);
-  }
-
-  delete(path: string, handler: RouteHandler): void {
-    this.addRoute("DELETE", path, handler);
-  }
-
-  ws(path: string, handler: WebSocketHandler): void {
-    this.wsRoutes.set(path, handler);
-  }
-
-  static(prefix: string, root: string, options?: StaticOptions): void {
-    this.staticRoutes.push(stripUndefinedKeys({ prefix, root, options }));
-  }
-
-  fallback(handler: RouteHandler): void {
-    this.fallbackHandler = handler;
-  }
-
-  /**
-   * Get all registered routes for Bun.serve
-   */
-  getRoutes() {
-    return this.routes;
-  }
-
-  /**
-   * Get all WebSocket routes
-   */
-  getWsRoutes() {
-    return this.wsRoutes;
-  }
-
-  /**
-   * Get all static routes
-   */
-  getStaticRoutes() {
-    return this.staticRoutes;
-  }
-
-  /**
-   * Get fallback handler
-   */
-  getFallback() {
-    return this.fallbackHandler;
-  }
-
-  private addRoute(method: string, path: string, handler: RouteHandler): void {
-    if (!this.routes.has(path)) {
-      this.routes.set(path, new Map());
-    }
-    this.routes.get(path)!.set(method, handler);
-  }
-}
 
 export default class WebHostService implements TokenRingService {
   readonly name = "WebHostService";
@@ -96,7 +20,7 @@ export default class WebHostService implements TokenRingService {
   resources = new KeyedRegistry<WebResource>();
   registerResource = this.resources.set;
   getResourceEntries = this.resources.entriesArray;
-  private router = new Router();
+
   private server: Bun.Server<unknown> | null = null;
   private config: ParsedWebHostConfig | undefined;
 
@@ -107,44 +31,52 @@ export default class WebHostService implements TokenRingService {
     if (config) this.config = config;
   }
 
-  private requireConfig(): ParsedWebHostConfig {
-    if (!this.config) {
-      throw new ConfigurationError(this.name, "WebHostService is not configured");
-    }
-    return this.config;
-  }
-
   getAuthConfig(): ParsedWebHostConfig["auth"] {
     return this.requireConfig().auth;
   }
 
   async listen() {
-    if (this.server) {
-      throw new ConfigurationError(this.name, "Server already listening");
-    }
     const config = this.requireConfig();
-    this.router = new Router();
+
+    const routes: Serve.RoutesWithUpgrade<Context, string> = {};
+    const wsRoutes = new EnhancedStringMap<WebSocketHandler>();
 
     // Register all resources
     for (const resource of this.resources.valuesArray()) {
-      await resource.register(this.router);
+      if ("routes" in resource) {
+        Object.assign(routes, resource.routes);
+      } else if ("wsRoutes" in resource) {
+        wsRoutes.insertAll(Object.entries(resource.wsRoutes));
+      }
     }
 
     // Build Bun.serve fetch handler
-    const fetchHandler = this.buildFetchHandler();
+    const fetchHandler = this.buildFetchHandler(wsRoutes);
 
     // Build WebSocket handlers
-    const websocketHandlers = this.buildWebSocketHandlers();
+    const websocketHandlers = this.buildWebSocketHandlers(wsRoutes);
 
-    // Start Bun server
-    this.server = Bun.serve({
-      port: config.port,
-      hostname: config.host,
-      fetch: fetchHandler,
-      websocket: websocketHandlers,
-    });
+    if (this.server) {
+      // Only fetch, error, routes, and websocket can be updated.
+      this.server.reload({
+        fetch: fetchHandler,
+        websocket: websocketHandlers,
+      });
+    } else {
+      // Start Bun server
+      this.server = Bun.serve({
+        routes,
+        port: config.port,
+        hostname: config.host,
+        fetch: fetchHandler,
+        websocket: websocketHandlers,
+        development: {
+          hmr: false,
+        },
+      });
 
-    this.app.serviceOutput(this, `Web Host listening at ${this.getURL()}`);
+      this.app.serviceOutput(this, `Web Host listening at ${this.getURL()}`);
+    }
   }
 
   async reconfigure(config: ParsedWebHostConfig) {
@@ -174,12 +106,14 @@ export default class WebHostService implements TokenRingService {
     return new URL(`http://${this.server.hostname}:${this.server.port}`);
   }
 
-  private buildFetchHandler() {
-    const routes = this.router.getRoutes();
-    const wsRoutes = this.router.getWsRoutes();
-    const staticRoutes = this.router.getStaticRoutes();
-    const fallback = this.router.getFallback();
+  private requireConfig(): ParsedWebHostConfig {
+    if (!this.config) {
+      throw new ConfigurationError(this.name, "WebHostService is not configured");
+    }
+    return this.config;
+  }
 
+  private buildFetchHandler(wsRoutes: EnhancedStringMap<WebSocketHandler>) {
     return async (request: Request, server: Bun.Server<Context>): Promise<Response | undefined> => {
       const url = new URL(request.url);
       const path = url.pathname;
@@ -204,57 +138,12 @@ export default class WebHostService implements TokenRingService {
         return undefined;
       }
 
-      // Wrap request and response utilities
-      const bunRequest = this.wrapRequest(request);
-      const bunResponse = this.createResponseHelper();
-
-      // Try static file routes first
-      for (const { prefix, root, options } of staticRoutes) {
-        if (path.startsWith(prefix)) {
-          let filePath = path.slice(prefix.length);
-
-          // Handle index file
-          if (filePath === "" || filePath === "/") {
-            filePath = "/" + (options?.index || "index.html");
-          }
-
-          const fullPath = `${root}${filePath}`;
-
-          try {
-            const file = Bun.file(fullPath);
-            if (await file.exists()) {
-              return new Response(file, options?.headers ? { headers: options.headers } : undefined);
-            }
-          } catch {
-            // File doesn't exist, continue to next handler
-          }
-        }
-      }
-
-      // Try route handlers
-      const routeHandlers = routes.get(path);
-      if (routeHandlers) {
-        const handler = routeHandlers.get(request.method);
-        if (handler) {
-          const result = await handler(bunRequest, bunResponse);
-          return result || new Response("");
-        }
-      }
-
-      // Try fallback handler
-      if (fallback) {
-        const result = await fallback(bunRequest, bunResponse);
-        return result || new Response("");
-      }
-
       // 404 Not Found
       return new Response("Not Found", { status: 404 });
     };
   }
 
-  private buildWebSocketHandlers() {
-    const wsRoutes = this.router.getWsRoutes();
-
+  private buildWebSocketHandlers(wsRoutes: EnhancedStringMap<WebSocketHandler>) {
     return {
       open(ws: Bun.ServerWebSocket<Context>) {
         const handler = wsRoutes.get(ws.data.path);
@@ -300,64 +189,6 @@ export default class WebHostService implements TokenRingService {
           };
           handler.message(wsWrapper, message);
         }
-      },
-    };
-  }
-
-  private wrapRequest(request: Request): BunRequest {
-    return {
-      method: request.method,
-      url: request.url,
-      path: new URL(request.url).pathname,
-      headers: request.headers,
-      body: () => request.text(),
-      json: () => request.json(),
-      text: () => request.text(),
-      arrayBuffer: () => request.arrayBuffer(),
-    };
-  }
-
-  private createResponseHelper(): BunResponse {
-    return {
-      json: (data: any, status = 200) => {
-        return new Response(JSON.stringify(data), {
-          status,
-          headers: { "Content-Type": "application/json" },
-        });
-      },
-      text: (data: string, status = 200) => {
-        return new Response(data, {
-          status,
-          headers: { "Content-Type": "text/plain" },
-        });
-      },
-      file: (path: string) => {
-        const file = Bun.file(path);
-        return Promise.resolve(new Response(file));
-      },
-      html: (data: string, status = 200) => {
-        return new Response(data, {
-          status,
-          headers: { "Content-Type": "text/html" },
-        });
-      },
-      redirect: (url: string, status = 302) => {
-        return new Response(null, {
-          status,
-          headers: { Location: url },
-        });
-      },
-      stream: (callback: (controller: ReadableStreamDefaultController) => Promise<void>) => {
-        const stream = new ReadableStream({
-          start: callback,
-        });
-        return new Response(stream, {
-          headers: {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            Connection: "keep-alive",
-          },
-        });
       },
     };
   }

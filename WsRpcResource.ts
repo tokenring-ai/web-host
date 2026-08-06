@@ -4,7 +4,7 @@ import type { RpcMethod } from "@tokenring-ai/rpc/types";
 import formatError from "@tokenring-ai/utility/error/formatError";
 import { z } from "zod";
 import type { ParsedWebHostAuthConfig } from "./schema.ts";
-import type { BunRouter, BunWebSocket, WebResource } from "./types.ts";
+import type { BunWebSocket, WebResource, WebSocketHandler } from "./types.ts";
 
 const jsonBodySchema = z.object({
   jsonrpc: z.string(),
@@ -29,17 +29,23 @@ type WsData = {
 };
 
 export default class WsRpcResource implements WebResource {
+  wsRoutes: Record<string, WebSocketHandler>;
+
   constructor(
     private app: TokenRingApp,
     private jsonRpcEndpoint: string,
     private auth: ParsedWebHostAuthConfig,
-  ) {}
+  ) {
+    this.wsRoutes = {
+      [this.jsonRpcEndpoint]: this.handler(),
+    };
+  }
 
-  register(router: BunRouter) {
+  handler() {
     const rpcService = this.app.requireService(RpcService);
     const authConfig = this.auth;
 
-    router.ws(this.jsonRpcEndpoint, {
+    return {
       open: (ws: BunWebSocket) => {
         const data: WsData = {
           abortController: new AbortController(),
@@ -186,6 +192,6 @@ export default class WsRpcResource implements WebResource {
           );
         }
       },
-    });
+    };
   }
 }

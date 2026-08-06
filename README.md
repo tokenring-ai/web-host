@@ -1,17 +1,14 @@
 # @tokenring-ai/web-host
 
-Bun-based web hosting service for TokenRing applications, providing a
-pluggable system for serving web resources, static content, SPAs, and
-JSON-RPC APIs.
+Bun-based web hosting service for TokenRing applications, providing a pluggable system for serving web resources, static
+content, SPAs, and JSON-RPC APIs.
 
 ## Overview
 
-The `@tokenring-ai/web-host` package serves as the web foundation for
-TokenRing applications. It provides a high-performance web server built on
-**Bun.serve** with a resource registration system that allows different
-packages to extend web functionality through plugins. The package supports
-static file serving, SPA routing, WebSocket RPC, and username/password
-authentication for RPC sessions.
+The `@tokenring-ai/web-host` package serves as the web foundation for TokenRing applications. It provides a
+high-performance web server built on **Bun.serve** with a resource registration system that allows different packages to
+extend web functionality through plugins. The package supports static file serving, SPA routing, WebSocket RPC, and
+username/password authentication for RPC sessions.
 
 ## Installation
 
@@ -21,27 +18,23 @@ bun add @tokenring-ai/web-host
 
 ## Features
 
-- **High-Performance Server**: Built on Bun.serve for low-latency HTTP and
-  WebSocket handling
-- **Resource Registration System**: Pluggable architecture using KeyedRegistry
-  for web resources
+- **High-Performance Server**: Built on Bun.serve for low-latency HTTP and WebSocket handling
+- **Resource Registration System**: Pluggable architecture using KeyedRegistry for web resources
 - **Static File Serving**: Serve static files with custom routing prefixes
-- **SPA Support**: Single Page Application routing with fallback for
-  client-side navigation
+- **SPA Support**: Single Page Application routing with fallback for client-side navigation
 - **WebSocket RPC**: Real-time WebSocket-based RPC with streaming support
 - **Authentication**: Username/password login over the WebSocket RPC session
 - **Plugin Integration**: Seamless integration with TokenRing plugin system
-- **Automatic RPC Registration**: Auto-creates WebSocket RPC resource from
-  RpcService endpoints
+- **Automatic RPC Registration**: Auto-creates WebSocket RPC resource from RpcService endpoints
 - **Type Safety**: Full TypeScript support with Zod configuration validation
 
 ## Chat Commands
 
-| Command | Description |
-|---------|-------------|
-| `/webhost show` | Show web host URL and available resources |
-| `/webhost start` | Start the web host server |
-| `/webhost stop` | Stop the web host server |
+| Command          | Description                               |
+|------------------|-------------------------------------------|
+| `/webhost show`  | Show web host URL and available resources |
+| `/webhost start` | Start the web host server                 |
+| `/webhost stop`  | Stop the web host server                  |
 
 ### /webhost show
 
@@ -96,9 +89,8 @@ Web host stopped
 
 ## Tools
 
-This package does not define any tools. Tools are typically used for
-agent-assisted operations, and the web-host package focuses on web server
-functionality rather than agent tools.
+This package does not define any tools. Tools are typically used for agent-assisted operations, and the web-host package
+focuses on web server functionality rather than agent tools.
 
 ## Configuration
 
@@ -149,10 +141,9 @@ const WebHostAuthConfigSchema = z.object({
 | `users`    | Record | Map of usernames to credentials |
 | `password` | string | Password for that username      |
 
-`auth` is required. Every WebSocket RPC session must authenticate with a
-username and password before calling other methods. Authentication is performed
-with the reserved JSON-RPC method `auth` over the open WebSocket (not HTTP
-Basic or Bearer headers).
+`auth` is required. Every WebSocket RPC session must authenticate with a username and password before calling other
+methods. Authentication is performed with the reserved JSON-RPC method `auth` over the open WebSocket (not HTTP Basic or
+Bearer headers).
 
 **Auth request:**
 
@@ -253,9 +244,8 @@ webHost:
 
 ## WebSocket RPC Client
 
-Use `createWsRPCClient` to call server RPC methods over `/rpc:ws`. Auth is
-**required** on both the server and the client: every connection must log in
-with username/password before other RPC methods are allowed.
+Use `createWsRPCClient` to call server RPC methods over `/rpc:ws`. Auth is **required** on both the server and the
+client: every connection must log in with username/password before other RPC methods are allowed.
 
 ```typescript
 import { createWsRPCClient } from "@tokenring-ai/web-host";
@@ -282,14 +272,14 @@ function createWsRPCClient<T extends RPCSchema>(
 ): { [K in keyof T["methods"]]: FunctionTypeOfRPCCall<T, K> };
 ```
 
-| Argument | Type | Description |
-|----------|------|-------------|
-| `wsUrl` | `URL` | WebSocket endpoint (typically `/rpc:ws`) |
-| `schemas` | `RPCSchema` | RPC method schemas for type-safe calls |
-| `auth` | `{ username, password }` | **Required.** Sent via the `auth` RPC after connect (and after reconnect) before other methods |
+| Argument  | Type                     | Description                                                                                    |
+|-----------|--------------------------|------------------------------------------------------------------------------------------------|
+| `wsUrl`   | `URL`                    | WebSocket endpoint (typically `/rpc:ws`)                                                       |
+| `schemas` | `RPCSchema`              | RPC method schemas for type-safe calls                                                         |
+| `auth`    | `{ username, password }` | **Required.** Sent via the `auth` RPC after connect (and after reconnect) before other methods |
 
-Sockets are cached by URL: multiple clients for the same URL share one
-WebSocket, and a successful login is reused for that connection.
+Sockets are cached by URL: multiple clients for the same URL share one WebSocket, and a successful login is reused for
+that connection.
 
 ## License
 

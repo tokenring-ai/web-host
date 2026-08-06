@@ -67,16 +67,25 @@ describe("WebHostService", () => {
       expect(mockApp.serviceOutput).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("Web Host listening at"));
     });
 
-    it("should register resources", async () => {
+    it("should include resource routes when starting server", async () => {
+      const routeHandler = mock(() => new Response("ok"));
       const mockResource: WebResource = {
-        register: mock(),
+        routes: {
+          "/test": routeHandler,
+        },
       };
 
       service.registerResource("test", mockResource);
 
       await service.listen();
 
-      expect(mockResource.register).toHaveBeenCalled();
+      expect(Bun.serve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          routes: expect.objectContaining({
+            "/test": routeHandler,
+          }),
+        }),
+      );
     });
 
     it("should configure auth when provided", async () => {
@@ -124,7 +133,9 @@ describe("WebHostService", () => {
   describe("resource registration", () => {
     it("should register and retrieve resources", () => {
       const mockResource: WebResource = {
-        register: mock(),
+        routes: {
+          "/test": () => new Response("ok"),
+        },
       };
 
       service.registerResource("test", mockResource);
@@ -135,8 +146,18 @@ describe("WebHostService", () => {
     });
 
     it("should handle multiple resources", () => {
-      const resource1: WebResource = { register: mock() };
-      const resource2: WebResource = { register: mock() };
+      const resource1: WebResource = {
+        routes: {
+          "/one": () => new Response("one"),
+        },
+      };
+      const resource2: WebResource = {
+        wsRoutes: {
+          "/ws": {
+            open: mock(),
+          },
+        },
+      };
 
       service.registerResource("resource1", resource1);
       service.registerResource("resource2", resource2);

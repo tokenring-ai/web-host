@@ -3,7 +3,6 @@ import type TokenRingApp from "@tokenring-ai/app";
 import createTestingApp from "@tokenring-ai/app/test/createTestingApp.test";
 import { createRPCEndpoint } from "@tokenring-ai/rpc/createRPCEndpoint";
 import { z } from "zod";
-import FallbackResource, { FallbackResourceConfigSchema } from "./FallbackResource.ts";
 import StaticResource, { staticResourceConfigSchema } from "./StaticResource";
 import WebHostService from "./WebHostService";
 
@@ -54,12 +53,6 @@ describe("WebHost Integration Tests", () => {
             notFoundFile: "404.html",
             prefix: "/static",
           }),
-          spa: FallbackResourceConfigSchema.parse({
-            type: "spa",
-            file: "/path/to/app/index.html",
-            description: "SPA application",
-            prefix: "/app",
-          }),
         },
       };
 
@@ -67,7 +60,6 @@ describe("WebHost Integration Tests", () => {
 
       // Register resources
       service.registerResource("static", new StaticResource(config.resources.static));
-      service.registerResource("spa", new FallbackResource(config.resources.spa));
 
       await service.listen();
 
@@ -122,8 +114,8 @@ describe("WebHost Integration Tests", () => {
     });
   });
 
-  describe("Error Handling Integration", () => {
-    it("should handle resource registration failures", async () => {
+  describe("Route Merging Integration", () => {
+    it("should merge routes from multiple HTTP resources on listen", async () => {
       const config = {
         host: "127.0.0.1",
         port: 3000,
@@ -136,13 +128,26 @@ describe("WebHost Integration Tests", () => {
 
       service = new WebHostService(mockApp, config);
 
-      const failingResource = {
-        register: mock().mockRejectedValue(new Error("Registration failed")),
-      };
+      const handlerA = mock(() => new Response("a"));
+      const handlerB = mock(() => new Response("b"));
 
-      service.registerResource("failing", failingResource);
+      service.registerResource("resourceA", {
+        routes: { "/a": handlerA },
+      });
+      service.registerResource("resourceB", {
+        routes: { "/b": handlerB },
+      });
 
-      await expect(service.listen()).rejects.toThrow("Registration failed");
+      await service.listen();
+
+      expect(Bun.serve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          routes: expect.objectContaining({
+            "/a": handlerA,
+            "/b": handlerB,
+          }),
+        }),
+      );
     });
   });
 
@@ -177,9 +182,13 @@ describe("WebHost Integration Tests", () => {
         },
       });
 
-      const resource1 = { register: mock() };
-      const resource2 = { register: mock() };
-      const resource3 = { register: mock() };
+      const resource1 = { routes: { "/1": () => new Response("1") } };
+      const resource2 = { routes: { "/2": () => new Response("2") } };
+      const resource3 = {
+        wsRoutes: {
+          "/ws": { open: mock() },
+        },
+      };
 
       service.registerResource("resource1", resource1);
       service.registerResource("resource2", resource2);
