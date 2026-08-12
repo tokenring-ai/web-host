@@ -6,7 +6,8 @@ import EnhancedStringMap from "@tokenring-ai/utility/map/enhancedStringMap";
 import deepEqual from "@tokenring-ai/utility/object/deepEqual";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import type { Serve } from "bun";
-import type { ParsedWebHostConfig } from "./schema.ts";
+import { type ParsedWebHostConfig, type WebHostConfig, WebHostConfigSchema } from "./schema.ts";
+import { buildTlsOptions } from "./tls.ts";
 import type { BunWebSocket, WebResource, WebSocketHandler } from "./types.ts";
 
 type Context = {
@@ -23,12 +24,15 @@ export default class WebHostService implements TokenRingService {
 
   private server: Bun.Server<unknown> | null = null;
   private config: ParsedWebHostConfig | undefined;
+  /** Live WebSocket connections for keepalive ping. */
+  private activeSockets = new Set<Bun.ServerWebSocket<Context>>();
+  private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private app: TokenRingApp,
-    config?: ParsedWebHostConfig,
+    config?: WebHostConfig | ParsedWebHostConfig,
   ) {
-    if (config) this.config = config;
+    if (config) this.config = WebHostConfigSchema.parse(config);
   }
 
   getAuthConfig(): ParsedWebHostConfig["auth"] {
@@ -53,12 +57,15 @@ export default class WebHostService implements TokenRingService {
     // Build Bun.serve fetch handler
     const fetchHandler = this.buildFetchHandler(wsRoutes);
 
-    // Build WebSocket handlers
-    const websocketHandlers = this.buildWebSocketHandlers(wsRoutes);
+    // Build WebSocket handlers (includes keepalive open/close bookkeeping)
+    const websocketHandlers = this.buildWebSocketHandlers(wsRoutes, config);
+
+    const tlsOptions = buildTlsOptions(config.tls);
 
     if (this.server) {
       // Only fetch, error, routes, and websocket can be updated.
       this.server.reload({
+        routes,
         fetch: fetchHandler,
         websocket: websocketHandlers,
       });
@@ -70,6 +77,7 @@ export default class WebHostService implements TokenRingService {
         hostname: config.host,
         fetch: fetchHandler,
         websocket: websocketHandlers,
+        ...(tlsOptions ? { tls: tlsOptions } : {}),
         development: {
           hmr: false,
         },
@@ -77,22 +85,29 @@ export default class WebHostService implements TokenRingService {
 
       this.app.serviceOutput(this, `Web Host listening at ${this.getURL()}`);
     }
+
+    this.startKeepalive(config);
   }
 
-  async reconfigure(config: ParsedWebHostConfig) {
-    if (this.config && deepEqual(config, this.config)) return;
+  async reconfigure(config: WebHostConfig | ParsedWebHostConfig) {
+    const parsed = WebHostConfigSchema.parse(config);
+    if (this.config && deepEqual(parsed, this.config)) return;
 
-    this.config = config;
+    this.config = parsed;
 
     // Only restart the server if it is already listening; first-time bind happens in plugin start.
     if (this.server) {
       await this.server.stop();
       this.server = null;
+      this.stopKeepalive();
+      this.activeSockets.clear();
       await this.listen();
     }
   }
 
   async stop() {
+    this.stopKeepalive();
+    this.activeSockets.clear();
     if (this.server) {
       await this.server.stop();
       this.server = null;
@@ -103,7 +118,8 @@ export default class WebHostService implements TokenRingService {
     if (!this.server) {
       throw new ConfigurationError(this.name, "Server not started");
     }
-    return new URL(`http://${this.server.hostname}:${this.server.port}`);
+    // Prefer Bun's own URL (includes correct scheme when TLS is on).
+    return this.server.url;
   }
 
   private requireConfig(): ParsedWebHostConfig {
@@ -111,6 +127,39 @@ export default class WebHostService implements TokenRingService {
       throw new ConfigurationError(this.name, "WebHostService is not configured");
     }
     return this.config;
+  }
+
+  private getKeepalive(config: ParsedWebHostConfig) {
+    return config.websocket.keepalive;
+  }
+
+  private startKeepalive(config: ParsedWebHostConfig) {
+    this.stopKeepalive();
+
+    const keepalive = this.getKeepalive(config);
+    if (!keepalive.enabled) return;
+
+    this.keepaliveTimer = setInterval(() => {
+      for (const ws of this.activeSockets) {
+        try {
+          // Protocol-level ping (RFC 6455). Clients / proxies that drop idle
+          // sockets will see activity; Bun auto-handles pong replies via sendPings.
+          ws.ping();
+        } catch {
+          // Socket may already be half-closed; cleanup happens in `close`.
+        }
+      }
+    }, keepalive.interval);
+
+    // Don't keep the process alive solely for keepalive ticks.
+    this.keepaliveTimer.unref();
+  }
+
+  private stopKeepalive() {
+    if (this.keepaliveTimer !== null) {
+      clearInterval(this.keepaliveTimer);
+      this.keepaliveTimer = null;
+    }
   }
 
   private buildFetchHandler(wsRoutes: EnhancedStringMap<WebSocketHandler>) {
@@ -143,51 +192,70 @@ export default class WebHostService implements TokenRingService {
     };
   }
 
-  private buildWebSocketHandlers(wsRoutes: EnhancedStringMap<WebSocketHandler>) {
+  private wrapSocket(ws: Bun.ServerWebSocket<Context>): BunWebSocket {
     return {
+      send: (data: string | object) => {
+        const message = typeof data === "string" ? data : JSON.stringify(data);
+        ws.send(message);
+      },
+      close: () => ws.close(),
+      ping: (data?: string | ArrayBufferView | ArrayBuffer) => {
+        ws.ping(data as string | Bun.BufferSource | undefined);
+      },
+      pong: (data?: string | ArrayBufferView | ArrayBuffer) => {
+        ws.pong(data as string | Bun.BufferSource | undefined);
+      },
+      data: ws.data,
+    };
+  }
+
+  private buildWebSocketHandlers(wsRoutes: EnhancedStringMap<WebSocketHandler>, config: ParsedWebHostConfig) {
+    const activeSockets = this.activeSockets;
+    const wrapSocket = this.wrapSocket.bind(this);
+    const keepalive = this.getKeepalive(config);
+
+    // idleTimeout is in seconds. Give at least two missed pings before drop.
+    const idleTimeoutSeconds = keepalive.enabled ? Math.max(120, Math.ceil((keepalive.interval * 3) / 1000)) : 120;
+
+    return {
+      // Bun auto-replies to client pings when sendPings is true.
+      sendPings: keepalive.enabled,
+      idleTimeout: idleTimeoutSeconds,
+
       open(ws: Bun.ServerWebSocket<Context>) {
+        activeSockets.add(ws);
         const handler = wsRoutes.get(ws.data.path);
         if (handler?.open) {
-          // Create wrapper with send method
-          const wsWrapper: BunWebSocket = {
-            send: (data: string | object) => {
-              const message = typeof data === "string" ? data : JSON.stringify(data);
-              ws.send(message);
-            },
-            close: () => ws.close(),
-            data: ws.data,
-          };
-          handler.open(wsWrapper);
+          handler.open(wrapSocket(ws));
         }
       },
 
       close(ws: Bun.ServerWebSocket<Context>) {
+        activeSockets.delete(ws);
         const handler = wsRoutes.get(ws.data.path);
         if (handler?.close) {
-          const wsWrapper: BunWebSocket = {
-            send: (data: string | object) => {
-              const message = typeof data === "string" ? data : JSON.stringify(data);
-              ws.send(message);
-            },
-            close: () => ws.close(),
-            data: ws.data,
-          };
-          handler.close(wsWrapper);
+          handler.close(wrapSocket(ws));
         }
       },
 
       message(ws: Bun.ServerWebSocket<Context>, message: string | Buffer) {
         const handler = wsRoutes.get(ws.data.path);
         if (handler?.message) {
-          const wsWrapper: BunWebSocket = {
-            send: (data: string | object) => {
-              const msg = typeof data === "string" ? data : JSON.stringify(data);
-              ws.send(msg);
-            },
-            close: () => ws.close(),
-            data: ws.data,
-          };
-          handler.message(wsWrapper, message);
+          handler.message(wrapSocket(ws), message);
+        }
+      },
+
+      ping(ws: Bun.ServerWebSocket<Context>, data: Buffer) {
+        const handler = wsRoutes.get(ws.data.path);
+        if (handler?.ping) {
+          handler.ping(wrapSocket(ws), data);
+        }
+      },
+
+      pong(ws: Bun.ServerWebSocket<Context>, data: Buffer) {
+        const handler = wsRoutes.get(ws.data.path);
+        if (handler?.pong) {
+          handler.pong(wrapSocket(ws), data);
         }
       },
     };

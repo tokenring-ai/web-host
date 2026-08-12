@@ -20,6 +20,12 @@ export interface WebSocketHandler {
   close?(ws: BunWebSocket): void;
 
   message?(ws: BunWebSocket, message: string | Buffer): void;
+
+  /** Protocol-level ping received from the peer (or sent by the server). */
+  ping?(ws: BunWebSocket, data: Buffer): void;
+
+  /** Protocol-level pong received from the peer. */
+  pong?(ws: BunWebSocket, data: Buffer): void;
 }
 
 /**
@@ -31,6 +37,12 @@ export interface BunWebSocket {
   send(data: string | object): void;
 
   close(): void;
+
+  /** Send a protocol-level WebSocket ping frame. */
+  ping?(data?: string | ArrayBufferView | ArrayBuffer): void;
+
+  /** Send a protocol-level WebSocket pong frame. */
+  pong?(data?: string | ArrayBufferView | ArrayBuffer): void;
 }
 
 /**

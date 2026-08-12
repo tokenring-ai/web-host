@@ -164,7 +164,14 @@ function getOrCreateSocketEntry(wsUrl: URL): SocketEntry {
     const pendingStreams = new Map<number, StreamHandler>();
 
     socket.onmessage = event => {
-      const data = JSON.parse(event.data) as unknown;
+      let data: unknown;
+      try {
+        data = JSON.parse(event.data);
+      } catch {
+        console.warn("WebSocket: dropped malformed JSON message");
+        return;
+      }
+
       const parsed = JSONRPCSchema.parse(data);
       const { id, result, error, stream } = parsed;
 
@@ -186,7 +193,22 @@ function getOrCreateSocketEntry(wsUrl: URL): SocketEntry {
       }
     };
 
-    socket.addEventListener("close", () => socketCache.delete(urlKey), { once: true });
+    socket.addEventListener(
+      "close",
+      () => {
+        const closeError = new Error("WebSocket closed");
+        for (const { reject } of pendingRequests.values()) {
+          reject(closeError);
+        }
+        pendingRequests.clear();
+        for (const handler of pendingStreams.values()) {
+          handler.error(closeError);
+        }
+        pendingStreams.clear();
+        socketCache.delete(urlKey);
+      },
+      { once: true },
+    );
 
     entry = {
       socket,

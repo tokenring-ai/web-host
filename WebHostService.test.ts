@@ -88,6 +88,30 @@ describe("WebHostService", () => {
       );
     });
 
+    it("should pass routes on server reload when listen is called again", async () => {
+      const reload = mock();
+      spyOn(Bun, "serve").mockImplementation((() => ({ ...mockServer, reload })) as unknown as typeof Bun.serve);
+
+      await service.listen();
+
+      const lateHandler = mock(() => new Response("late"));
+      service.registerResource("late", {
+        routes: { "/late": lateHandler },
+      });
+
+      await service.listen();
+
+      expect(reload).toHaveBeenCalledWith(
+        expect.objectContaining({
+          routes: expect.objectContaining({
+            "/late": lateHandler,
+          }),
+          fetch: expect.any(Function),
+          websocket: expect.any(Object),
+        }),
+      );
+    });
+
     it("should configure auth when provided", async () => {
       const configWithAuth = {
         ...mockConfig,
@@ -104,6 +128,71 @@ describe("WebHostService", () => {
 
       // Should not throw
       expect(true).toBe(true);
+    });
+
+    it("should enable WebSocket sendPings keepalive by default", async () => {
+      await service.listen();
+
+      expect(Bun.serve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          websocket: expect.objectContaining({
+            sendPings: true,
+            idleTimeout: expect.any(Number),
+          }),
+        }),
+      );
+    });
+
+    it("should disable sendPings when keepalive is off", async () => {
+      const serviceNoKeepalive = new WebHostService(mockApp, {
+        ...mockConfig,
+        websocket: { keepalive: { enabled: false, interval: 30_000 } },
+      });
+
+      await serviceNoKeepalive.listen();
+
+      expect(Bun.serve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          websocket: expect.objectContaining({
+            sendPings: false,
+          }),
+        }),
+      );
+
+      await serviceNoKeepalive.stop();
+    });
+
+    it("should pass TLS options when TLS is enabled", async () => {
+      const cert = `-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----`;
+      const key = `-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----`;
+      const tlsService = new WebHostService(mockApp, {
+        ...mockConfig,
+        tls: {
+          enabled: true,
+          certificate: cert,
+          privateKey: key,
+        },
+      });
+
+      await tlsService.listen();
+
+      expect(Bun.serve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tls: expect.objectContaining({
+            cert,
+            key,
+          }),
+        }),
+      );
+
+      await tlsService.stop();
+    });
+
+    it("should not pass tls when disabled", async () => {
+      await service.listen();
+
+      const call = (Bun.serve as unknown as ReturnType<typeof mock>).mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(call.tls).toBeUndefined();
     });
   });
 
@@ -123,6 +212,27 @@ describe("WebHostService", () => {
 
       const url = service.getURL();
       expect(url.toString()).toBe("http://127.0.0.1:3000/");
+    });
+
+    it("should return https URL when TLS is enabled and server.url is absent", async () => {
+      const cert = `-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----`;
+      const key = `-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----`;
+      // Mock without `.url` so getURL falls back to scheme from tlsEnabled.
+      spyOn(Bun, "serve").mockImplementation((() => ({
+        hostname: "127.0.0.1",
+        port: 3443,
+        stop: mock(),
+      })) as unknown as typeof Bun.serve);
+
+      const tlsService = new WebHostService(mockApp, {
+        ...mockConfig,
+        port: 3443,
+        tls: { enabled: true, certificate: cert, privateKey: key },
+      });
+      await tlsService.listen();
+
+      expect(tlsService.getURL().toString()).toBe("https://127.0.0.1:3443/");
+      await tlsService.stop();
     });
 
     it("should throw error when server is not started", () => {

@@ -174,7 +174,8 @@ export default class WsRpcResource implements WebResource {
                   error: { code: -32603, message: formatError(error) },
                 }),
               );
-              ws.close();
+              // Don't close the socket — a single stream failure must not kill
+              // other pending requests/streams on this connection.
             }
             return;
           }

@@ -19,10 +19,13 @@ bun add @tokenring-ai/web-host
 ## Features
 
 - **High-Performance Server**: Built on Bun.serve for low-latency HTTP and WebSocket handling
+- **TLS/HTTPS**: Optional certificate and private key (file path or PEM) for secure deployments
 - **Resource Registration System**: Pluggable architecture using KeyedRegistry for web resources
 - **Static File Serving**: Serve static files with custom routing prefixes
+- **Response Compression**: Automatic Brotli/Gzip for compressible static assets (negotiated via Accept-Encoding)
 - **SPA Support**: Single Page Application routing with fallback for client-side navigation
 - **WebSocket RPC**: Real-time WebSocket-based RPC with streaming support
+- **WebSocket Keepalive**: Protocol-level ping/pong to keep long-lived connections alive through proxies
 - **Authentication**: Username/password login over the WebSocket RPC session
 - **Plugin Integration**: Seamless integration with TokenRing plugin system
 - **Automatic RPC Registration**: Auto-creates WebSocket RPC resource from RpcService endpoints
@@ -112,16 +115,60 @@ const WebHostConfigSchema = z.object({
   host: z.string().default("127.0.0.1"),
   port: z.number().int().min(0).max(65535).default(0),
   auth: WebHostAuthConfigSchema,
+  tls: WebHostTlsConfigSchema.exactOptional(),
+  websocket: WebHostWebSocketConfigSchema, // defaults applied
 });
 ```
 
 **Configuration Options:**
 
-| Option | Type       | Required | Default     | Description                                                                     |
-|--------|------------|----------|-------------|---------------------------------------------------------------------------------|
-| `host` | string     | No       | `127.0.0.1` | Host address to bind to                                                         |
-| `port` | number     | No       | `0`         | Port number. If 0 or not specified, an available port is automatically assigned |
-| `auth` | AuthConfig | Yes      | -           | **Required.** Username/password credentials for WebSocket RPC login             |
+| Option      | Type             | Required | Default     | Description                                                                     |
+|-------------|------------------|----------|-------------|---------------------------------------------------------------------------------|
+| `host`      | string           | No       | `127.0.0.1` | Host address to bind to                                                         |
+| `port`      | number           | No       | `0`         | Port number. If 0 or not specified, an available port is automatically assigned |
+| `auth`      | AuthConfig       | Yes      | -           | **Required.** Username/password credentials for WebSocket RPC login             |
+| `tls`       | TlsConfig        | No       | -           | Optional HTTPS/TLS certificate configuration                                    |
+| `websocket` | WebSocketConfig  | No       | keepalive on / 30s | WebSocket keepalive (protocol ping/pong)                                 |
+
+### TLS Config Schema
+
+```typescript
+const WebHostTlsConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  certificate: z.string(),  // file path or PEM
+  privateKey: z.string(),   // file path or PEM
+  passphrase: z.string().exactOptional(),
+  ca: z.string().exactOptional(),
+});
+```
+
+| Option        | Type    | Description                                              |
+|---------------|---------|----------------------------------------------------------|
+| `enabled`     | boolean | When `true`, the server listens with HTTPS               |
+| `certificate` | string  | TLS certificate as a filesystem path or PEM string       |
+| `privateKey`  | string  | TLS private key as a filesystem path or PEM string       |
+| `passphrase`  | string  | Optional passphrase for an encrypted private key         |
+| `ca`          | string  | Optional CA / intermediate chain (path or PEM)           |
+
+When TLS is enabled, `getURL()` returns an `https://` URL. Changing TLS settings requires a server restart.
+
+### WebSocket Keepalive Config
+
+```typescript
+const WebHostWebSocketConfigSchema = z.object({
+  keepalive: z.object({
+    enabled: z.boolean().default(true),
+    interval: z.number().int().min(1000).default(30_000), // ms
+  }).default({ enabled: true, interval: 30_000 }),
+});
+```
+
+| Option               | Type    | Default | Description                                              |
+|----------------------|---------|---------|----------------------------------------------------------|
+| `keepalive.enabled`  | boolean | `true`  | Send protocol-level WebSocket ping frames on an interval |
+| `keepalive.interval` | number  | `30000` | Milliseconds between server-initiated pings              |
+
+Bun also auto-responds to client pings when keepalive is enabled (`sendPings`). Idle connections that stop responding are closed after roughly three missed intervals (minimum 120s).
 
 ### AuthConfig Schema
 
@@ -192,23 +239,37 @@ Unauthenticated method calls receive error code `-32001` until a successful
 
 ```typescript
 const staticResourceConfigSchema = z.object({
-  type: z.literal("static"),
   root: z.string(),
-  description: z.string(),
-  indexFile: z.string(),
+  indexFile: z.string().exactOptional(),
   notFoundFile: z.string().exactOptional(),
-  prefix: z.string()
+  prefix: z.string(),
+  headers: z.record(z.string(), z.string()).exactOptional(),
+  compress: z.object({
+    enabled: z.boolean().default(true),
+    minSize: z.number().int().min(0).default(1024),
+    algorithms: z.array(z.enum(["gzip", "br"])).default(["br", "gzip"]),
+  }).default({}),
 });
 ```
 
 | Option         | Type       | Description                            |
 |----------------|------------|----------------------------------------|
-| `type`         | `"static"` | Discriminator for static resource type |
 | `root`         | string     | Directory path for static files        |
-| `description`  | string     | Human-readable description             |
 | `indexFile`    | string     | Default index file name                |
 | `notFoundFile` | string     | Optional custom 404 page               |
 | `prefix`       | string     | URL prefix for this resource           |
+| `headers`      | Record     | Extra response headers for all files   |
+| `compress`     | object     | Response compression (see below)       |
+
+#### Compression options
+
+| Option                 | Type              | Default           | Description                                                        |
+|------------------------|-------------------|-------------------|--------------------------------------------------------------------|
+| `compress.enabled`     | boolean           | `true`            | Negotiate Brotli/Gzip for compressible text assets                 |
+| `compress.minSize`     | number            | `1024`            | Only compress files at least this many bytes                       |
+| `compress.algorithms`  | `("br"\|"gzip")[]`| `["br","gzip"]`   | Preference order; first match accepted by the client is used       |
+
+Compression uses the `Accept-Encoding` request header and sets `Content-Encoding` + `Vary: Accept-Encoding`. Already-compressed formats (images, video, fonts, etc.) are skipped.
 
 ### SPAResource Config Schema
 
