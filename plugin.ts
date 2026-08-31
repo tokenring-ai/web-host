@@ -19,7 +19,7 @@ export default {
   version: packageJSON.version,
   description: packageJSON.description,
   install(app) {
-    app.addService(new WebHostService(app));
+    app.addService(WebHostService, new WebHostService(app));
 
     app.waitForService(AgentCommandService, service => {
       service.addAgentCommands(commands);

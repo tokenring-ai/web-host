@@ -19,7 +19,7 @@ export interface WebSocketHandler {
 
   close?(ws: BunWebSocket): void;
 
-  message?(ws: BunWebSocket, message: string | Buffer): void;
+  message?(ws: BunWebSocket, message: string | Buffer): void | Promise<void>;
 
   /** Protocol-level ping received from the peer (or sent by the server). */
   ping?(ws: BunWebSocket, data: Buffer): void;

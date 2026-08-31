@@ -118,7 +118,7 @@ export default class WebHostService implements TokenRingService {
     if (!this.server) {
       throw new ConfigurationError(this.name, "Server not started");
     }
-    // Prefer Bun's own URL (includes correct scheme when TLS is on).
+
     return this.server.url;
   }
 
@@ -241,7 +241,9 @@ export default class WebHostService implements TokenRingService {
       message(ws: Bun.ServerWebSocket<Context>, message: string | Buffer) {
         const handler = wsRoutes.get(ws.data.path);
         if (handler?.message) {
-          handler.message(wrapSocket(ws), message);
+          void Promise.resolve(handler.message(wrapSocket(ws), message)).catch(err => {
+            console.error("Unhandled error in WebSocket message handler:", err);
+          });
         }
       },
 

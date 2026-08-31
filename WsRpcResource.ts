@@ -6,15 +6,17 @@ import { z } from "zod";
 import type { ParsedWebHostAuthConfig } from "./schema.ts";
 import type { BunWebSocket, WebResource, WebSocketHandler } from "./types.ts";
 
+const jsonRpcIdSchema = z.union([z.string(), z.number(), z.null()]);
+
 const jsonBodySchema = z.object({
   jsonrpc: z.string(),
-  id: z.number(),
+  id: jsonRpcIdSchema.exactOptional(),
   method: z.string(),
   params: z.unknown().exactOptional(),
 });
 
 const jsonBodyIdSchema = z.object({
-  id: z.number(),
+  id: jsonRpcIdSchema,
 });
 
 const authParamsSchema = z.object({
@@ -82,19 +84,41 @@ export default class WsRpcResource implements WebResource {
         // error, even if the rest of the request fails schema validation.
         const idResult = jsonBodyIdSchema.safeParse(data);
         const id = idResult.success ? idResult.data.id : null;
+        // JSON-RPC 2.0: a Request object without an `id` member is a Notification.
+        // After a valid parse the server MUST NOT reply (including later errors).
+        const isNotification = typeof data === "object" && data !== null && !("id" in data);
+
+        let parsed: z.infer<typeof jsonBodySchema>;
+        try {
+          parsed = jsonBodySchema.parse(data);
+        } catch (error) {
+          // Not a well-formed Request/Notification — still report Invalid/Internal error.
+          ws.send(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id,
+              error: { code: -32603, message: formatError(error) },
+            }),
+          );
+          return;
+        }
+
+        const send = (payload: object) => {
+          if (!isNotification) {
+            ws.send(JSON.stringify(payload));
+          }
+        };
 
         try {
-          const { jsonrpc, method: methodName, params } = jsonBodySchema.parse(data);
+          const { jsonrpc, method: methodName, params } = parsed;
           const rpcParams = params ?? {};
 
           if (jsonrpc !== "2.0") {
-            ws.send(
-              JSON.stringify({
-                jsonrpc: "2.0",
-                id,
-                error: { code: -32600, message: "Invalid Request" },
-              }),
-            );
+            send({
+              jsonrpc: "2.0",
+              id,
+              error: { code: -32600, message: "Invalid Request" },
+            });
             return;
           }
 
@@ -104,49 +128,41 @@ export default class WsRpcResource implements WebResource {
             if (authConfig.users[username]?.password !== password) {
               wsData.authenticated = false;
               wsData.username = null;
-              ws.send(
-                JSON.stringify({
-                  jsonrpc: "2.0",
-                  id,
-                  error: { code: -32001, message: "Invalid username or password" },
-                }),
-              );
+              send({
+                jsonrpc: "2.0",
+                id,
+                error: { code: -32001, message: "Invalid username or password" },
+              });
               return;
             }
 
             wsData.authenticated = true;
             wsData.username = username;
-            ws.send(
-              JSON.stringify({
-                jsonrpc: "2.0",
-                id,
-                result: { authenticated: true, username },
-              }),
-            );
+            send({
+              jsonrpc: "2.0",
+              id,
+              result: { authenticated: true, username },
+            });
             return;
           }
 
           if (!wsData.authenticated) {
-            ws.send(
-              JSON.stringify({
-                jsonrpc: "2.0",
-                id,
-                error: { code: -32001, message: "Unauthorized. Call auth with username and password first." },
-              }),
-            );
+            send({
+              jsonrpc: "2.0",
+              id,
+              error: { code: -32001, message: "Unauthorized. Call auth with username and password first." },
+            });
             return;
           }
 
           const method = rpcService.getMethod(methodName);
 
           if (!method) {
-            ws.send(
-              JSON.stringify({
-                jsonrpc: "2.0",
-                id,
-                error: { code: -32601, message: "Method not found" },
-              }),
-            );
+            send({
+              jsonrpc: "2.0",
+              id,
+              error: { code: -32601, message: "Method not found" },
+            });
             return;
           }
 
@@ -156,24 +172,21 @@ export default class WsRpcResource implements WebResource {
             try {
               const result = method.execute(validatedParams, this.app, wsData.abortController.signal) as AsyncGenerator<unknown>;
               for await (const event of result) {
-                ws.send(JSON.stringify({ jsonrpc: "2.0", id, result: event }));
+                const validatedEvent = method.resultSchema.parse(event) as unknown;
+                send({ jsonrpc: "2.0", id, result: validatedEvent });
               }
-              ws.send(
-                JSON.stringify({
-                  jsonrpc: "2.0",
-                  id,
-                  result: null,
-                  stream: "end",
-                }),
-              );
+              send({
+                jsonrpc: "2.0",
+                id,
+                result: null,
+                stream: "end",
+              });
             } catch (error) {
-              ws.send(
-                JSON.stringify({
-                  jsonrpc: "2.0",
-                  id,
-                  error: { code: -32603, message: formatError(error) },
-                }),
-              );
+              send({
+                jsonrpc: "2.0",
+                id,
+                error: { code: -32603, message: formatError(error) },
+              });
               // Don't close the socket — a single stream failure must not kill
               // other pending requests/streams on this connection.
             }
@@ -182,15 +195,13 @@ export default class WsRpcResource implements WebResource {
 
           const result = (await (method as RpcMethod<any, any, "query" | "mutation">).execute(validatedParams, this.app)) as unknown;
           const validatedResult = method.resultSchema.parse(result) as unknown;
-          ws.send(JSON.stringify({ jsonrpc: "2.0", id, result: validatedResult }));
+          send({ jsonrpc: "2.0", id, result: validatedResult });
         } catch (error) {
-          ws.send(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              id,
-              error: { code: -32603, message: formatError(error) },
-            }),
-          );
+          send({
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32603, message: formatError(error) },
+          });
         }
       },
     };
