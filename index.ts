@@ -27,6 +27,12 @@ export {
   WebHostWebSocketConfigSchema,
   WebHostWebSocketKeepaliveSchema,
 } from "./schema.ts";
+export {
+  default as SessionStore,
+  SESSION_COOKIE,
+  SESSION_TTL_MS,
+  sessionCookieHeader,
+} from "./sessionStore.ts";
 export { buildTlsOptions, isPemMaterial, resolveTlsMaterial } from "./tls.ts";
 export type { WebResource } from "./types.ts";
 

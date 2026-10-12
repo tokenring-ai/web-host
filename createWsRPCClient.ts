@@ -49,8 +49,12 @@ export type WsRPCAuthHandler = {
    * Rejecting propagates the failure to all pending RPC calls.
    */
   onAuthRequired: (error: RPCError) => Promise<void>;
-  /** Called after authentication succeeds, so any login UI can close. */
-  onAuthSuccess?: () => void;
+  /**
+   * Called after authentication succeeds, so any login UI can close. The
+   * username is whoever the server says we are, which after a cookie-based
+   * sign-in is the only place the client learns it.
+   */
+  onAuthSuccess?: (username: string) => void;
 };
 
 let authHandler: WsRPCAuthHandler | null = null;
@@ -92,31 +96,65 @@ function ensureOpen(socket: WebSocket) {
   });
 }
 
-function sendAuthRequest(entry: SocketEntry, auth: WsRPCClientAuth): Promise<void> {
-  const id = ++rpcId;
+/** Transport health of the shared RPC socket, observable from the UI. */
+export type RpcConnectionState = "connected" | "connecting" | "disconnected";
 
-  return new Promise<void>((resolve, reject) => {
+let connectionState: RpcConnectionState = "disconnected";
+const connectionListeners = new Set<(state: RpcConnectionState) => void>();
+
+function setConnectionState(next: RpcConnectionState): void {
+  if (connectionState === next) return;
+  connectionState = next;
+  for (const listener of connectionListeners) listener(next);
+  // Window event so non-React consumers (and tests) can observe it too.
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("tokenring:rpc-connection", { detail: { state: next } }));
+  }
+}
+
+/** Current transport health of the shared RPC socket. */
+export function getRpcConnectionState(): RpcConnectionState {
+  return connectionState;
+}
+
+/** Subscribe to transport-health changes. Returns an unsubscribe function. */
+export function subscribeRpcConnection(listener: (state: RpcConnectionState) => void): () => void {
+  connectionListeners.add(listener);
+  return () => {
+    connectionListeners.delete(listener);
+  };
+}
+
+const authResultSchema = z.object({ authenticated: z.boolean(), username: z.string() });
+
+/**
+ * Authenticates the socket and resolves with the signed-in username.
+ *
+ * With no password in hand we send no credentials at all: the server then
+ * accepts the socket only if its handshake carried a valid session cookie.
+ * That is what makes a page reload silent, since the password is deliberately
+ * never persisted anywhere in the browser.
+ */
+function sendAuthRequest(entry: SocketEntry, auth: WsRPCClientAuth): Promise<string> {
+  const id = ++rpcId;
+  const params = auth.password ? { username: auth.username, password: auth.password } : {};
+
+  return new Promise<string>((resolve, reject) => {
     entry.pendingRequests.set(id, {
-      resolve: () => resolve(),
+      resolve: (value: unknown) => {
+        const parsed = authResultSchema.safeParse(value);
+        resolve(parsed.success ? parsed.data.username : auth.username);
+      },
       reject: (reason?: unknown) => reject(reason instanceof Error ? reason : new Error(String(reason))),
     });
 
-    entry.socket.send(
-      JSON.stringify({
-        jsonrpc: "2.0",
-        id,
-        method: "auth",
-        params: {
-          username: auth.username,
-          password: auth.password,
-        },
-      }),
-    );
+    entry.socket.send(JSON.stringify({ jsonrpc: "2.0", id, method: "auth", params }));
   });
 }
 
 function ensureAuth(entry: SocketEntry, auth: WsRPCClientAuth): Promise<void> {
-  if (entry.authenticatedUsername === auth.username) {
+  // Already signed in, and no fresh password is on offer to switch user with.
+  if (entry.authenticatedUsername !== null && (!auth.password || entry.authenticatedUsername === auth.username)) {
     return Promise.resolve();
   }
 
@@ -132,9 +170,9 @@ function ensureAuth(entry: SocketEntry, auth: WsRPCClientAuth): Promise<void> {
         try {
           // Credentials are re-read from `auth` on every attempt, so a login
           // UI can update them between retries.
-          await sendAuthRequest(entry, auth);
-          entry.authenticatedUsername = auth.username;
-          authHandler?.onAuthSuccess?.();
+          const username = await sendAuthRequest(entry, auth);
+          entry.authenticatedUsername = username;
+          authHandler?.onAuthSuccess?.(username);
           return;
         } catch (error) {
           if (isRPCAuthError(error) && authHandler) {
@@ -163,6 +201,9 @@ function getOrCreateSocketEntry(wsUrl: URL): SocketEntry {
     const pendingRequests = new EnhancedMap<number, PendingRequest>();
     const pendingStreams = new Map<number, StreamHandler>();
 
+    setConnectionState("connecting");
+    socket.addEventListener("open", () => setConnectionState("connected"), { once: true });
+
     socket.onmessage = event => {
       let data: unknown;
       try {
@@ -172,7 +213,14 @@ function getOrCreateSocketEntry(wsUrl: URL): SocketEntry {
         return;
       }
 
-      const parsed = JSONRPCSchema.parse(data);
+      let parsed: z.output<typeof JSONRPCSchema>;
+      try {
+        parsed = JSONRPCSchema.parse(data);
+      } catch {
+        // One schema-invalid server message must not throw out of the socket handler.
+        console.warn("WebSocket: dropped schema-invalid message", data);
+        return;
+      }
       const { id, result, error, stream } = parsed;
 
       if (pendingRequests.has(id)) {
@@ -196,6 +244,11 @@ function getOrCreateSocketEntry(wsUrl: URL): SocketEntry {
     socket.addEventListener(
       "close",
       () => {
+        // A sign-out reset may already have replaced this socket; the stale
+        // close must not report the new one as down or evict it from the cache.
+        const current = socketCache.get(urlKey);
+        const isCurrent = !current || current.socket === socket;
+        if (isCurrent) setConnectionState("disconnected");
         const closeError = new Error("WebSocket closed");
         for (const { reject } of pendingRequests.values()) {
           reject(closeError);
@@ -205,7 +258,7 @@ function getOrCreateSocketEntry(wsUrl: URL): SocketEntry {
           handler.error(closeError);
         }
         pendingStreams.clear();
-        socketCache.delete(urlKey);
+        if (isCurrent) socketCache.delete(urlKey);
       },
       { once: true },
     );
@@ -221,6 +274,27 @@ function getOrCreateSocketEntry(wsUrl: URL): SocketEntry {
   }
 
   return entry;
+}
+
+/**
+ * Sign-out: forgets every shared socket's authenticated user and closes it.
+ * In-flight calls reject with "WebSocket closed"; the next call opens a fresh
+ * socket that must authenticate again (and, with the session revoked and no
+ * password in memory, reaches the auth handler's login UI).
+ */
+export function resetWsRPCConnections(): void {
+  const entries = [...socketCache.values()];
+  socketCache.clear();
+  for (const entry of entries) {
+    entry.authenticatedUsername = null;
+    entry.authPromise = null;
+    try {
+      entry.socket.close();
+    } catch {
+      // Already closing; nothing to do.
+    }
+  }
+  if (entries.length > 0) setConnectionState("disconnected");
 }
 
 /**

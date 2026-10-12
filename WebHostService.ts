@@ -7,13 +7,31 @@ import deepEqual from "@tokenring-ai/utility/object/deepEqual";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import type { Serve } from "bun";
 import { type ParsedWebHostConfig, type WebHostConfig, WebHostConfigSchema } from "./schema.ts";
+import SessionStore, {
+  clearedSessionCookieHeader,
+  credentialsValid,
+  isSecureRequest,
+  parseBasicCredentials,
+  parseCookie,
+  SESSION_COOKIE,
+  SESSION_TTL_MS,
+  sessionCookieHeader,
+} from "./sessionStore.ts";
 import { buildTlsOptions } from "./tls.ts";
 import type { BunWebSocket, WebResource, WebSocketHandler } from "./types.ts";
+import { LoginRateLimiter, loginRateLimiter } from "./util/authSecurity.ts";
 
 type Context = {
   path: string;
   abortController: AbortController;
+  /** Client identity captured at upgrade for login throttling in the WS auth handler. */
+  clientIp?: string | undefined;
+  /** Username resolved from the session cookie at handshake, if any. */
+  sessionUsername?: string | null;
 };
+
+/** Endpoint that trades a password for a session cookie, and revokes it again. */
+const AUTH_SESSION_ROUTE = "/api/auth/session";
 
 export default class WebHostService implements TokenRingService {
   readonly name = "WebHostService";
@@ -27,6 +45,8 @@ export default class WebHostService implements TokenRingService {
   /** Live WebSocket connections for keepalive ping. */
   private activeSockets = new Set<Bun.ServerWebSocket<Context>>();
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+  /** Logged-in sessions, shared by the cookie endpoint and the WebSocket handshake. */
+  private readonly sessions = new SessionStore();
 
   constructor(
     private app: TokenRingApp,
@@ -37,6 +57,15 @@ export default class WebHostService implements TokenRingService {
 
   getAuthConfig(): ParsedWebHostConfig["auth"] {
     return this.requireConfig().auth;
+  }
+
+  /**
+   * The username behind the request's sign-in session cookie, or null. Lets
+   * other HTTP resources (e.g. `/api/fs` media) accept the same sign-in as the
+   * RPC socket, so one sign-out revokes access everywhere.
+   */
+  resolveSessionUsername(request: Request): string | null {
+    return this.sessions.resolve(parseCookie(request.headers.get("Cookie"), SESSION_COOKIE));
   }
 
   async listen() {
@@ -53,6 +82,9 @@ export default class WebHostService implements TokenRingService {
         wsRoutes.insertAll(Object.entries(resource.wsRoutes));
       }
     }
+
+    // Registered after resources so a catch-all static route cannot shadow it.
+    Object.assign(routes, this.buildAuthSessionRoutes());
 
     // Build Bun.serve fetch handler
     const fetchHandler = this.buildFetchHandler(wsRoutes);
@@ -119,7 +151,12 @@ export default class WebHostService implements TokenRingService {
       throw new ConfigurationError(this.name, "Server not started");
     }
 
-    return this.server.url;
+    // Bun always sets `url` on real servers; rebuild it from the bound host,
+    // port, and TLS mode when a server object arrives without one (test mocks).
+    const url = (this.server as { url?: URL }).url;
+    if (url) return url;
+    const scheme = this.requireConfig().tls?.enabled ? "https" : "http";
+    return new URL(`${scheme}://${this.server.hostname}:${this.server.port}/`);
   }
 
   private requireConfig(): ParsedWebHostConfig {
@@ -162,6 +199,66 @@ export default class WebHostService implements TokenRingService {
     }
   }
 
+  /**
+   * `POST /api/auth/session` trades HTTP Basic credentials for an HttpOnly
+   * session cookie; `DELETE` revokes it. The cookie is what lets a reloaded
+   * page re-open its RPC socket without the user retyping a password, while
+   * the password itself is never stored anywhere in the browser.
+   */
+  private buildAuthSessionRoutes(): Serve.RoutesWithUpgrade<Context, string> {
+    const noStore = { "Cache-Control": "no-store", "Content-Type": "application/json" };
+
+    return {
+      [AUTH_SESSION_ROUTE]: async (request: Request): Promise<Response> => {
+        const secure = isSecureRequest(request);
+
+        if (request.method === "DELETE") {
+          this.sessions.revoke(parseCookie(request.headers.get("Cookie"), SESSION_COOKIE));
+          return new Response(null, {
+            status: 204,
+            headers: { "Cache-Control": "no-store", "Set-Cookie": clearedSessionCookieHeader(secure) },
+          });
+        }
+
+        if (request.method !== "POST") {
+          return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST, DELETE" } });
+        }
+
+        const auth = this.requireConfig().auth;
+        if (Object.keys(auth.users).length === 0) {
+          // Misconfiguration: refuse rather than hand out unauthenticated sessions.
+          return new Response("Authentication is not configured", { status: 503, headers: { "Cache-Control": "no-store" } });
+        }
+
+        const basic = parseBasicCredentials(request.headers.get("Authorization"));
+        const throttleKey = basic ? LoginRateLimiter.keyFor(LoginRateLimiter.clientIpFromRequest(request), basic.username) : null;
+        if (throttleKey) {
+          const retryAfterSeconds = loginRateLimiter.isBlocked(throttleKey);
+          if (retryAfterSeconds > 0) {
+            return new Response("Too many failed login attempts", {
+              status: 429,
+              headers: { "Retry-After": String(retryAfterSeconds), "Cache-Control": "no-store" },
+            });
+          }
+        }
+        if (!basic || !credentialsValid(auth, basic.username, basic.password)) {
+          if (throttleKey) loginRateLimiter.recordFailure(throttleKey);
+          return new Response("Unauthorized", {
+            status: 401,
+            headers: { "WWW-Authenticate": 'Basic realm="TokenRing", charset="UTF-8"', "Cache-Control": "no-store" },
+          });
+        }
+        if (throttleKey) loginRateLimiter.recordSuccess(throttleKey);
+
+        const sessionId = this.sessions.create(basic.username);
+        return new Response(JSON.stringify({ ok: true, username: basic.username }), {
+          status: 200,
+          headers: { ...noStore, "Set-Cookie": sessionCookieHeader(sessionId, Math.floor(SESSION_TTL_MS / 1000), secure) },
+        });
+      },
+    };
+  }
+
   private buildFetchHandler(wsRoutes: EnhancedStringMap<WebSocketHandler>) {
     return async (request: Request, server: Bun.Server<Context>): Promise<Response | undefined> => {
       const url = new URL(request.url);
@@ -170,11 +267,31 @@ export default class WebHostService implements TokenRingService {
       // Check if this is a WebSocket upgrade request.
       // Auth for RPC is handled inside WsRpcResource (username/password over the socket).
       if (wsRoutes.has(path) && request.headers.get("upgrade") === "websocket") {
+        // Browsers always send Origin on a WS handshake; reject cross-site
+        // upgrades so a malicious page cannot ride a session cookie even if
+        // cookie policy ever loosens. Non-browser clients omit Origin.
+        const origin = request.headers.get("Origin");
+        if (origin) {
+          let sameOrigin: boolean;
+          try {
+            sameOrigin = new URL(origin).host === url.host;
+          } catch {
+            sameOrigin = false;
+          }
+          if (!sameOrigin) {
+            return new Response("Cross-origin WebSocket upgrade rejected", { status: 403 });
+          }
+        }
         // Upgrade to WebSocket
+        // A valid session cookie authenticates the socket before its first
+        // message, so a reloaded page never has to send a password again.
+        const sessionUsername = this.sessions.resolve(parseCookie(request.headers.get("Cookie"), SESSION_COOKIE));
         const success = server.upgrade(request, {
           data: {
             path,
             abortController: new AbortController(),
+            sessionUsername,
+            clientIp: LoginRateLimiter.clientIpFromRequest(request),
           },
         });
 

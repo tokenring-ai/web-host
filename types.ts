@@ -3,6 +3,8 @@ import type { Serve } from "bun";
 type Context = {
   path: string;
   abortController: AbortController;
+  /** Username resolved from the session cookie at handshake, if any. */
+  sessionUsername?: string | null;
 };
 
 export interface WebResource {

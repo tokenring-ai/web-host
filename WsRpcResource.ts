@@ -1,10 +1,11 @@
 import type TokenRingApp from "@tokenring-ai/app";
 import { RpcService } from "@tokenring-ai/rpc";
-import type { RpcMethod } from "@tokenring-ai/rpc/types";
+import type { RpcCallContext, RpcMethod } from "@tokenring-ai/rpc/types";
 import formatError from "@tokenring-ai/utility/error/formatError";
 import { z } from "zod";
 import type { ParsedWebHostAuthConfig } from "./schema.ts";
 import type { BunWebSocket, WebResource, WebSocketHandler } from "./types.ts";
+import { LoginRateLimiter, loginRateLimiter, timingSafeStringsEqual } from "./util/authSecurity.ts";
 
 const jsonRpcIdSchema = z.union([z.string(), z.number(), z.null()]);
 
@@ -19,15 +20,24 @@ const jsonBodyIdSchema = z.object({
   id: jsonRpcIdSchema,
 });
 
+/**
+ * Credentials are optional: a socket whose handshake carried a valid session
+ * cookie is already authenticated, and its client calls `auth` with no params
+ * purely to learn who it is signed in as.
+ */
 const authParamsSchema = z.object({
-  username: z.string(),
-  password: z.string(),
+  username: z.string().exactOptional(),
+  password: z.string().exactOptional(),
 });
 
 type WsData = {
   abortController: AbortController;
   authenticated: boolean;
   username: string | null;
+  /** Username resolved from the session cookie during the upgrade, if any. */
+  sessionUsername?: string | null;
+  /** Client identity captured at upgrade, used as the login-throttle key component. */
+  clientIp?: string;
 };
 
 export default class WsRpcResource implements WebResource {
@@ -49,12 +59,12 @@ export default class WsRpcResource implements WebResource {
 
     return {
       open: (ws: BunWebSocket) => {
-        const data: WsData = {
-          abortController: new AbortController(),
-          authenticated: false,
-          username: null,
-        };
-        ws.data = data;
+        // `ws.data` is the per-connection context created at upgrade and shared
+        // by every later callback, so this mutates it rather than replacing it.
+        const data = ws.data as WsData;
+        const sessionUsername = data.sessionUsername ?? null;
+        data.authenticated = sessionUsername !== null;
+        data.username = sessionUsername;
       },
 
       close: (ws: BunWebSocket) => {
@@ -122,20 +132,53 @@ export default class WsRpcResource implements WebResource {
             return;
           }
 
-          // Username/password login over the WebSocket session (required).
+          // Login over the WebSocket: either username/password, or nothing at
+          // all when the handshake's session cookie already authenticated us.
           if (methodName === "auth") {
             const { username, password } = authParamsSchema.parse(rpcParams);
-            if (authConfig.users[username]?.password !== password) {
+
+            if (username === undefined || password === undefined) {
+              if (wsData.authenticated && wsData.username) {
+                send({ jsonrpc: "2.0", id, result: { authenticated: true, username: wsData.username } });
+                return;
+              }
+              send({
+                jsonrpc: "2.0",
+                id,
+                error: { code: -32001, message: "No active session. Sign in with a username and password." },
+              });
+              return;
+            }
+
+            const storedPassword = authConfig.users[username]?.password;
+            const throttleKey = LoginRateLimiter.keyFor(ws.data.clientIp, username);
+            const retryAfterSeconds = loginRateLimiter.isBlocked(throttleKey);
+            if (retryAfterSeconds > 0) {
               wsData.authenticated = false;
               wsData.username = null;
               send({
                 jsonrpc: "2.0",
+                id,
+                error: {
+                  code: -32001,
+                  message: `Too many failed login attempts. Try again in ${retryAfterSeconds} seconds.`,
+                },
+              });
+              return;
+            }
+            if (storedPassword === undefined || !timingSafeStringsEqual(password, storedPassword)) {
+              loginRateLimiter.recordFailure(throttleKey);
+              wsData.authenticated = false;
+              wsData.username = null;
+              send({
+                jsonrpc: 2.0,
                 id,
                 error: { code: -32001, message: "Invalid username or password" },
               });
               return;
             }
 
+            loginRateLimiter.recordSuccess(throttleKey);
             wsData.authenticated = true;
             wsData.username = username;
             send({
@@ -167,10 +210,11 @@ export default class WsRpcResource implements WebResource {
           }
 
           const validatedParams = method.inputSchema.parse(rpcParams) as unknown;
+          const context: RpcCallContext = { username: wsData.username };
 
           if (method.type === "stream") {
             try {
-              const result = method.execute(validatedParams, this.app, wsData.abortController.signal) as AsyncGenerator<unknown>;
+              const result = (method as RpcMethod<any, any, "stream">).execute(validatedParams, this.app, wsData.abortController.signal, context);
               for await (const event of result) {
                 const validatedEvent = method.resultSchema.parse(event) as unknown;
                 send({ jsonrpc: "2.0", id, result: validatedEvent });
@@ -193,7 +237,7 @@ export default class WsRpcResource implements WebResource {
             return;
           }
 
-          const result = (await (method as RpcMethod<any, any, "query" | "mutation">).execute(validatedParams, this.app)) as unknown;
+          const result = (await (method as RpcMethod<any, any, "query" | "mutation">).execute(validatedParams, this.app, context)) as unknown;
           const validatedResult = method.resultSchema.parse(result) as unknown;
           send({ jsonrpc: "2.0", id, result: validatedResult });
         } catch (error) {

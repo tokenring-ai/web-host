@@ -6,7 +6,11 @@ export const WebHostAuthConfigSchema = z.object({
     .record(
       z.string(),
       z.object({
-        password: z.string().meta({ sensitive: true, description: "Password for login auth (min 8 characters recommended)" } satisfies ConfigFieldMeta),
+        password: z.string().meta({
+          sensitive: true,
+          description:
+            "Password for login auth (min 8 characters recommended). May be plaintext or a `sha256:<hex digest>` digest so the raw password never appears in config.",
+        } satisfies ConfigFieldMeta),
       }),
     )
     .meta({ label: "Users", description: "Accounts allowed to access the web UI, keyed by username" } satisfies ConfigFieldMeta),

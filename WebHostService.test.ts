@@ -200,7 +200,7 @@ describe("WebHostService", () => {
     it("should stop the server", async () => {
       await service.listen();
 
-      service.stop();
+      await service.stop();
 
       expect(mockServer.stop).toHaveBeenCalled();
     });
