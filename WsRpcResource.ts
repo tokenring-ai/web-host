@@ -1,11 +1,12 @@
 import type TokenRingApp from "@tokenring-ai/app";
 import { RpcService } from "@tokenring-ai/rpc";
-import type { RpcCallContext, RpcMethod } from "@tokenring-ai/rpc/types";
+import type { RpcMethod } from "@tokenring-ai/rpc/types";
 import formatError from "@tokenring-ai/utility/error/formatError";
 import { z } from "zod";
-import type { ParsedWebHostAuthConfig } from "./schema.ts";
-import type { BunWebSocket, WebResource, WebSocketHandler } from "./types.ts";
-import { LoginRateLimiter, loginRateLimiter, timingSafeStringsEqual } from "./util/authSecurity.ts";
+import { isAdminOnlyMethod } from "./adminOnlyMethods.ts";
+import type { BunWebSocket, WebResource, WebRpcCallContext, WebSocketHandler } from "./types.ts";
+import UserService, { type ConfigUsers } from "./UserService.ts";
+import { LoginRateLimiter, loginRateLimiter } from "./util/authSecurity.ts";
 
 const jsonRpcIdSchema = z.union([z.string(), z.number(), z.null()]);
 
@@ -25,6 +26,13 @@ const jsonBodyIdSchema = z.object({
  * cookie is already authenticated, and its client calls `auth` with no params
  * purely to learn who it is signed in as.
  */
+/**
+ * `rpc.cancel` (a notification): the client stopped reading stream `id`, so the server stops
+ * producing it. Without this a stream ran until the whole socket closed, and every remounted
+ * view left one behind.
+ */
+const cancelParamsSchema = z.object({ id: jsonRpcIdSchema });
+
 const authParamsSchema = z.object({
   username: z.string().exactOptional(),
   password: z.string().exactOptional(),
@@ -36,9 +44,22 @@ type WsData = {
   username: string | null;
   /** Username resolved from the session cookie during the upgrade, if any. */
   sessionUsername?: string | null;
+  /** Whether that cookie session still holds; set by the web host at upgrade. */
+  sessionValid?: () => boolean;
+  /** For a socket signed in with a password: the stored password it matched, rechecked per message. */
+  credential?: string;
+  /** For a socket signed in with a managed user's password: their stamp, which changes on password/role change or sign-out. */
+  stamp?: string;
+  /** `scheme://host` of the page's request, for building links that work from the same place. */
+  requestOrigin?: string;
   /** Client identity captured at upgrade, used as the login-throttle key component. */
   clientIp?: string;
+  /** Running streams by request id, so `rpc.cancel` can stop one. */
+  streams?: Map<string | number | null, AbortController>;
 };
+
+/** The part of the auth config this resource needs: the configured users. */
+type AuthUsers = { users: ConfigUsers };
 
 export default class WsRpcResource implements WebResource {
   wsRoutes: Record<string, WebSocketHandler>;
@@ -46,7 +67,10 @@ export default class WsRpcResource implements WebResource {
   constructor(
     private app: TokenRingApp,
     private jsonRpcEndpoint: string,
-    private auth: ParsedWebHostAuthConfig,
+    /** A getter reads the current users, so a password change or removal applies without a restart. */
+    private auth: AuthUsers | (() => AuthUsers),
+    /** Managed accounts and roles. Without it only the config users exist (all administrators unless a role says otherwise). */
+    private users?: UserService,
   ) {
     this.wsRoutes = {
       [this.jsonRpcEndpoint]: this.handler(),
@@ -55,7 +79,17 @@ export default class WsRpcResource implements WebResource {
 
   handler() {
     const rpcService = this.app.requireService(RpcService);
-    const authConfig = this.auth;
+    const currentAuth = () => (typeof this.auth === "function" ? this.auth() : this.auth);
+    const users = this.users ?? new UserService({ configUsers: () => currentAuth().users });
+    const stillAuthorized = (data: WsData): boolean => {
+      if (data.username === null) return false;
+      if (data.credential !== undefined) {
+        const configured = currentAuth().users;
+        return Object.hasOwn(configured, data.username) && configured[data.username]?.password === data.credential;
+      }
+      if (data.stamp !== undefined) return users.stampOf(data.username) === data.stamp;
+      return data.sessionValid ? data.sessionValid() : true;
+    };
 
     return {
       open: (ws: BunWebSocket) => {
@@ -132,14 +166,20 @@ export default class WsRpcResource implements WebResource {
             return;
           }
 
+          if (methodName === "rpc.cancel") {
+            const parsedCancel = cancelParamsSchema.safeParse(rpcParams);
+            if (parsedCancel.success) wsData.streams?.get(parsedCancel.data.id)?.abort();
+            return;
+          }
+
           // Login over the WebSocket: either username/password, or nothing at
           // all when the handshake's session cookie already authenticated us.
           if (methodName === "auth") {
             const { username, password } = authParamsSchema.parse(rpcParams);
 
             if (username === undefined || password === undefined) {
-              if (wsData.authenticated && wsData.username) {
-                send({ jsonrpc: "2.0", id, result: { authenticated: true, username: wsData.username } });
+              if (wsData.authenticated && wsData.username && stillAuthorized(wsData)) {
+                send({ jsonrpc: "2.0", id, result: { authenticated: true, username: wsData.username, role: users.roleOf(wsData.username) } });
                 return;
               }
               send({
@@ -150,7 +190,6 @@ export default class WsRpcResource implements WebResource {
               return;
             }
 
-            const storedPassword = authConfig.users[username]?.password;
             const throttleKey = LoginRateLimiter.keyFor(ws.data.clientIp, username);
             const retryAfterSeconds = loginRateLimiter.isBlocked(throttleKey);
             if (retryAfterSeconds > 0) {
@@ -166,12 +205,13 @@ export default class WsRpcResource implements WebResource {
               });
               return;
             }
-            if (storedPassword === undefined || !timingSafeStringsEqual(password, storedPassword)) {
+            const authenticated = await users.authenticate(username, password);
+            if (!authenticated) {
               loginRateLimiter.recordFailure(throttleKey);
               wsData.authenticated = false;
               wsData.username = null;
               send({
-                jsonrpc: 2.0,
+                jsonrpc: "2.0",
                 id,
                 error: { code: -32001, message: "Invalid username or password" },
               });
@@ -180,12 +220,26 @@ export default class WsRpcResource implements WebResource {
 
             loginRateLimiter.recordSuccess(throttleKey);
             wsData.authenticated = true;
-            wsData.username = username;
+            wsData.username = authenticated.username;
+            delete wsData.credential;
+            delete wsData.stamp;
+            if (authenticated.credential !== undefined) wsData.credential = authenticated.credential;
+            if (authenticated.stamp !== undefined) wsData.stamp = authenticated.stamp;
             send({
               jsonrpc: "2.0",
               id,
-              result: { authenticated: true, username },
+              result: { authenticated: true, username: authenticated.username, role: authenticated.role },
             });
+            return;
+          }
+
+          if (wsData.authenticated && !stillAuthorized(wsData)) {
+            // Signed out elsewhere, removed from the config, or the password changed.
+            wsData.authenticated = false;
+            wsData.username = null;
+            delete wsData.credential;
+            delete wsData.stamp;
+            send({ jsonrpc: "2.0", id, error: { code: -32001, message: "Your session has ended. Sign in again." } });
             return;
           }
 
@@ -195,6 +249,12 @@ export default class WsRpcResource implements WebResource {
               id,
               error: { code: -32001, message: "Unauthorized. Call auth with username and password first." },
             });
+            return;
+          }
+
+          // Central, explicit gate: members never reach an administrator-only method, whatever the plugin does.
+          if (isAdminOnlyMethod(methodName) && users.roleOf(wsData.username) !== "admin") {
+            send({ jsonrpc: "2.0", id, error: { code: -32003, message: "Administrator access required." } });
             return;
           }
 
@@ -210,29 +270,38 @@ export default class WsRpcResource implements WebResource {
           }
 
           const validatedParams = method.inputSchema.parse(rpcParams) as unknown;
-          const context: RpcCallContext = { username: wsData.username };
+          const context: WebRpcCallContext = {
+            username: wsData.username,
+            ...(wsData.requestOrigin ? { requestOrigin: wsData.requestOrigin } : {}),
+          };
 
           if (method.type === "stream") {
+            // Each stream stops on its own `rpc.cancel`, or with the socket.
+            const streamController = new AbortController();
+            const signal = AbortSignal.any([wsData.abortController.signal, streamController.signal]);
+            wsData.streams ??= new Map();
+            wsData.streams.set(id, streamController);
             try {
-              const result = (method as RpcMethod<any, any, "stream">).execute(validatedParams, this.app, wsData.abortController.signal, context);
+              const result = (method as RpcMethod<any, any, "stream">).execute(validatedParams, this.app, signal, context);
               for await (const event of result) {
+                if (signal.aborted) break;
                 const validatedEvent = method.resultSchema.parse(event) as unknown;
                 send({ jsonrpc: "2.0", id, result: validatedEvent });
               }
-              send({
-                jsonrpc: "2.0",
-                id,
-                result: null,
-                stream: "end",
-              });
+              // A cancelled stream has no reader left to tell.
+              if (!signal.aborted) send({ jsonrpc: "2.0", id, result: null, stream: "end" });
             } catch (error) {
-              send({
-                jsonrpc: "2.0",
-                id,
-                error: { code: -32603, message: formatError(error) },
-              });
+              if (!signal.aborted) {
+                send({
+                  jsonrpc: "2.0",
+                  id,
+                  error: { code: -32603, message: formatError(error) },
+                });
+              }
               // Don't close the socket — a single stream failure must not kill
               // other pending requests/streams on this connection.
+            } finally {
+              if (wsData.streams.get(id) === streamController) wsData.streams.delete(id);
             }
             return;
           }

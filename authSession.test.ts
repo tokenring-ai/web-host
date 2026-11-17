@@ -64,7 +64,7 @@ describe("auth session endpoint", () => {
     const response = await serve.routes[AUTH_ROUTE]!(new Request(`http://localhost${AUTH_ROUTE}`, { method: "POST", headers: basic("mark", "s3cret") }));
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true, username: "mark" });
+    await expect(response.json()).resolves.toEqual({ ok: true, username: "mark", role: "admin" });
     const cookie = response.headers.get("Set-Cookie") ?? "";
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("SameSite=Lax");

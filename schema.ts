@@ -1,6 +1,9 @@
 import type { ConfigFieldMeta } from "@tokenring-ai/app/config/metadata";
 import z from "zod";
 
+export const UserRoleSchema = z.enum(["admin", "member"]);
+export type UserRole = z.infer<typeof UserRoleSchema>;
+
 export const WebHostAuthConfigSchema = z.object({
   users: z
     .record(
@@ -11,9 +14,32 @@ export const WebHostAuthConfigSchema = z.object({
           description:
             "Password for login auth (min 8 characters recommended). May be plaintext or a `sha256:<hex digest>` digest so the raw password never appears in config.",
         } satisfies ConfigFieldMeta),
+        role: UserRoleSchema.default("admin").meta({
+          description:
+            "admin can change settings, secrets and users; member cannot. A member is a trust level, not a sandbox: agents still run with the server's permissions.",
+        } satisfies ConfigFieldMeta),
       }),
     )
-    .meta({ label: "Users", description: "Accounts allowed to access the web UI, keyed by username" } satisfies ConfigFieldMeta),
+    .default({})
+    .meta({
+      label: "Users",
+      description: "Accounts defined in configuration, keyed by username. Accounts created in the web UI are stored separately.",
+    } satisfies ConfigFieldMeta),
+  sessionDays: z
+    .number()
+    .int()
+    .min(1)
+    .max(90)
+    .default(7)
+    .meta({ description: "Days a sign-in stays valid without use (it renews while the app is in use)" } satisfies ConfigFieldMeta),
+  usersFile: z
+    .string()
+    .exactOptional()
+    .meta({
+      advanced: true,
+      restartRequired: true,
+      description: "File holding accounts, access links and sign-ins created in the web UI (mode 0600). Unset keeps them in memory only.",
+    } satisfies ConfigFieldMeta),
 });
 export type WebHostAuthConfig = z.input<typeof WebHostAuthConfigSchema>;
 export type ParsedWebHostAuthConfig = z.output<typeof WebHostAuthConfigSchema>;
@@ -78,6 +104,15 @@ export const WebHostWebSocketConfigSchema = z
 
 export type ParsedWebHostWebSocketConfig = z.output<typeof WebHostWebSocketConfigSchema>;
 
+function isPublicUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password && !url.search && !url.hash;
+  } catch {
+    return false;
+  }
+}
+
 export const WebHostConfigSchema = z
   .object({
     host: z
@@ -91,7 +126,22 @@ export const WebHostConfigSchema = z
       .max(65535)
       .default(0)
       .meta({ restartRequired: true, description: "Port the HTTP server listens on (0 picks a random free port)" } satisfies ConfigFieldMeta),
-    auth: WebHostAuthConfigSchema.meta({
+    publicUrl: z
+      .string()
+      .refine(isPublicUrl, "Must be an http(s) URL without a username, password, query or fragment, such as https://tokenring.example.com")
+      .exactOptional()
+      .meta({
+        description:
+          "The address people outside this machine use to reach the app (needed behind Docker port mappings and reverse proxies). Used for access links and QR codes.",
+      } satisfies ConfigFieldMeta),
+    printAccessLink: z
+      .boolean()
+      .default(false)
+      .meta({
+        advanced: true,
+        description: "At startup, when run from a terminal on a network-reachable address, print a one-time admin sign-in link and QR code",
+      } satisfies ConfigFieldMeta),
+    auth: WebHostAuthConfigSchema.default({ users: {}, sessionDays: 7 }).meta({
       label: "Authentication",
       description: "Username/password credentials required for WebSocket RPC login",
     } satisfies ConfigFieldMeta),

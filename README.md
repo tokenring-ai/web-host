@@ -146,6 +146,15 @@ webHost:
       interval: 30000
 ```
 
+### Managed users, access links and roles
+
+Besides the `auth.users` map in config (read-only, administrators unless `role: member`), accounts can be created at runtime through the `/rpc/users` endpoint (`rpc/schema.ts`, implemented by `rpc/users.ts`). They live in `auth.usersFile` (backend sets `~/.config/tokenring/users.json`, mode 0600, atomic writes), which `UserService` loads at start; with no `usersFile` they are kept in memory only.
+
+- Passwords are stored as argon2id hashes; access-link tokens (256-bit, shown once) and session ids as sha256 hashes.
+- A link is `<base>/#access=<token>`. The page posts the fragment's token to `POST /api/auth/redeem` (same-origin JSON only), which returns the same session cookie as `/api/auth/session`.
+- `adminOnlyMethods.ts` is the deny-list of RPC methods a `member` may not call, enforced in `WsRpcResource` before dispatch. A new security-relevant RPC method must be added to it.
+- `webHost.publicUrl`, `webHost.printAccessLink` and `auth.sessionDays` (1 to 90, default 7) are the other settings. See `docs/docs/guides/remote-access-and-users.md`.
+
 ### Authentication (WebHostAuthConfig)
 
 ```typescript
@@ -167,6 +176,11 @@ const WebHostAuthConfigSchema = z.object({
 `auth` is **required**. Every WebSocket RPC session must authenticate with a username and password before calling
 other methods. Authentication is performed with the reserved JSON-RPC method `auth` over the open WebSocket (not
 HTTP Basic or Bearer headers).
+
+A sign-in lasts only while the user stays in `webHost.auth.users` with the same password. Removing the user or
+changing their password ends that session and any open WebSocket signed in with it or with a password; the client
+then gets error `-32001` "Your session has ended. Sign in again." A socket opened from a session cookie also ends
+when that session is signed out.
 
 #### Auth schema metadata
 

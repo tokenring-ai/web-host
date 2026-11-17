@@ -3,10 +3,11 @@
   "version": "0.2.0",
   "description": "Bun-powered web server for hosting TokenRing application services.",
   "dependencies": {
-    "@tokenring-ai/app": "workspace:*",
     "@tokenring-ai/agent": "workspace:*",
-    "@tokenring-ai/utility": "workspace:*",
+    "@tokenring-ai/app": "workspace:*",
     "@tokenring-ai/rpc": "workspace:*",
+    "@tokenring-ai/utility": "workspace:*",
+    "qrcode-generator": "2.0.4",
     "zod": "^4.6.7"
   },
   "exports": {

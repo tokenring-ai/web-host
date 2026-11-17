@@ -40,6 +40,17 @@ type FailureRecord = {
   blockedUntil: number;
 };
 
+let peerAddressOf: (request: Request) => string | undefined = () => undefined;
+
+/** Set by the web host once it listens: how to read a request's socket peer address. */
+export function setPeerAddressResolver(resolver: (request: Request) => string | undefined): void {
+  peerAddressOf = resolver;
+}
+
+function isLoopback(address: string): boolean {
+  return address === "::1" || address.startsWith("127.") || address.startsWith("::ffff:127.");
+}
+
 /**
  * In-memory login throttle shared by every password check (web-host session
  * route, the WS RPC `auth` method, the filesystem HTTP resource). Keys pair a
@@ -91,16 +102,24 @@ export class LoginRateLimiter {
     return `${clientIp ?? "unknown"}|${username.toLowerCase()}`;
   }
 
-  /** Best-effort client identity; behind a proxy this is the first X-Forwarded-For hop. */
+  /**
+   * The client's address for throttling: the socket's peer address. X-Forwarded-For is only
+   * believed when the peer is loopback, i.e. a reverse proxy on this machine; from anyone else it
+   * is a header the client chose, and trusting it would let them pick a fresh throttle key per try.
+   */
   static clientIpFromRequest(request: Request): string | undefined {
-    return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
+    const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
+    const peer = peerAddressOf(request);
+    if (peer === undefined) return forwarded;
+    return isLoopback(peer) && forwarded ? forwarded : peer;
   }
 
   private purge(): void {
     if (this.failures.size < 5000) return;
     const now = Date.now();
     for (const [key, record] of this.failures) {
-      if (record.blockedUntil > 0 && record.blockedUntil <= now) this.failures.delete(key);
+      // Expired lockouts, and failures too old to count towards one.
+      if (record.blockedUntil <= now && (record.blockedUntil > 0 || now - record.firstFailureAt > FAILURE_WINDOW_MS)) this.failures.delete(key);
     }
   }
 }

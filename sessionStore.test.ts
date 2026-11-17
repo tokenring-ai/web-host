@@ -77,6 +77,26 @@ describe("SessionStore", () => {
   });
 });
 
+describe("SessionStore credential checks", () => {
+  it("drops a session once its user is removed or their password changes", () => {
+    const store = new SessionStore();
+    const users: Record<string, string> = { mark: "s3cret" };
+    const current = (username: string) => users[username];
+    const id = store.create("mark", "s3cret");
+    expect(store.resolve(id, current)).toBe("mark");
+
+    users.mark = "changed";
+    expect(store.resolve(id, current)).toBeNull();
+    // Gone for good, even if the old password comes back.
+    users.mark = "s3cret";
+    expect(store.resolve(id, current)).toBeNull();
+
+    const other = store.create("mark", "s3cret");
+    delete users.mark;
+    expect(store.resolve(other, current)).toBeNull();
+  });
+});
+
 describe("cookie helpers", () => {
   it("marks the cookie HttpOnly and SameSite=Lax so scripts and other origins cannot use it", () => {
     const header = sessionCookieHeader("abc", 60, false);

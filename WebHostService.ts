@@ -9,17 +9,16 @@ import type { Serve } from "bun";
 import { type ParsedWebHostConfig, type WebHostConfig, WebHostConfigSchema } from "./schema.ts";
 import SessionStore, {
   clearedSessionCookieHeader,
-  credentialsValid,
   isSecureRequest,
   parseBasicCredentials,
   parseCookie,
   SESSION_COOKIE,
-  SESSION_TTL_MS,
   sessionCookieHeader,
 } from "./sessionStore.ts";
 import { buildTlsOptions } from "./tls.ts";
 import type { BunWebSocket, WebResource, WebSocketHandler } from "./types.ts";
-import { LoginRateLimiter, loginRateLimiter } from "./util/authSecurity.ts";
+import UserService from "./UserService.ts";
+import { LoginRateLimiter, loginRateLimiter, setPeerAddressResolver } from "./util/authSecurity.ts";
 
 type Context = {
   path: string;
@@ -28,10 +27,20 @@ type Context = {
   clientIp?: string | undefined;
   /** Username resolved from the session cookie at handshake, if any. */
   sessionUsername?: string | null;
+  /** Whether that session still holds: not signed out, user not removed, password unchanged. */
+  sessionValid?: () => boolean;
+  /** `scheme://host` the browser used for this request, so the UI can build links that work from the same place. */
+  requestOrigin?: string;
 };
 
 /** Endpoint that trades a password for a session cookie, and revokes it again. */
 const AUTH_SESSION_ROUTE = "/api/auth/session";
+/** Endpoint that trades a one-time access link token for a session cookie. */
+const AUTH_REDEEM_ROUTE = "/api/auth/redeem";
+
+/** The one message every failed redemption gets: unknown, expired and already-used must look identical. */
+const REDEEM_FAILURE = "This link is not valid. It may have expired or already been used. Ask for a new one.";
+const MAX_REDEEM_BODY_BYTES = 2048;
 
 export default class WebHostService implements TokenRingService {
   readonly name = "WebHostService";
@@ -42,11 +51,22 @@ export default class WebHostService implements TokenRingService {
 
   private server: Bun.Server<unknown> | null = null;
   private config: ParsedWebHostConfig | undefined;
+  /**
+   * Set when a reconfigure stopped the server but could not start it again (say the new port
+   * was busy), so the next reconfigure retries the restart even if the config is unchanged.
+   */
+  private restartPending = false;
   /** Live WebSocket connections for keepalive ping. */
   private activeSockets = new Set<Bun.ServerWebSocket<Context>>();
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
   /** Logged-in sessions, shared by the cookie endpoint and the WebSocket handshake. */
   private readonly sessions = new SessionStore();
+  /** Accounts created in the app, their access links and persistent sign-ins. Config users stay in `config.auth.users`. */
+  readonly users: UserService = new UserService({
+    configUsers: () => this.config?.auth.users ?? {},
+    configSessionCount: username => this.sessions.countFor(username),
+    report: message => this.app.serviceError(this, message),
+  });
 
   constructor(
     private app: TokenRingApp,
@@ -65,11 +85,51 @@ export default class WebHostService implements TokenRingService {
    * RPC socket, so one sign-out revokes access everywhere.
    */
   resolveSessionUsername(request: Request): string | null {
-    return this.sessions.resolve(parseCookie(request.headers.get("Cookie"), SESSION_COOKIE));
+    return this.resolveSessionId(parseCookie(request.headers.get("Cookie"), SESSION_COOKIE));
   }
+
+  /** Resolves a session cookie value against config-user sessions (memory) then managed-user sessions (persisted). */
+  private resolveSessionId(sessionId: string | undefined): string | null {
+    return this.sessions.resolve(sessionId, this.credentialFor) ?? this.users.resolveSession(sessionId);
+  }
+
+  /** The address other devices should use: the configured public URL, or null when none is configured. */
+  getConfiguredPublicUrl(): string | null {
+    const raw = this.config?.publicUrl;
+    if (!raw) return null;
+    const url = new URL(raw);
+    return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+  }
+
+  /** Ends every sign-in a user has, in memory and on disk; open sockets notice at their next call. */
+  async signOutUser(username: string): Promise<void> {
+    this.sessions.revokeUser(username);
+    await this.users.signOutUser(username);
+  }
+
+  /** Whether the server is bound to a TLS listener. */
+  get usesTls(): boolean {
+    return this.config?.tls?.enabled === true;
+  }
+
+  get printAccessLink(): boolean {
+    return this.config?.printAccessLink === true;
+  }
+
+  get listenHost(): string {
+    return this.requireConfig().host;
+  }
+
+  get listenPort(): number {
+    return this.server?.port ?? this.requireConfig().port;
+  }
+
+  /** The user's configured password, which a session must still match to be valid. */
+  private readonly credentialFor = (username: string): string | undefined => this.config?.auth.users[username]?.password;
 
   async listen() {
     const config = this.requireConfig();
+    await this.configureUsers(config);
 
     const routes: Serve.RoutesWithUpgrade<Context, string> = {};
     const wsRoutes = new EnhancedStringMap<WebSocketHandler>();
@@ -103,41 +163,71 @@ export default class WebHostService implements TokenRingService {
       });
     } else {
       // Start Bun server
-      this.server = Bun.serve({
-        routes,
-        port: config.port,
-        hostname: config.host,
-        fetch: fetchHandler,
-        websocket: websocketHandlers,
-        ...(tlsOptions ? { tls: tlsOptions } : {}),
-        development: {
-          hmr: false,
-        },
-      });
+      try {
+        this.server = Bun.serve({
+          routes,
+          port: config.port,
+          hostname: config.host,
+          fetch: fetchHandler,
+          websocket: websocketHandlers,
+          ...(tlsOptions ? { tls: tlsOptions } : {}),
+          development: {
+            hmr: false,
+          },
+        });
+      } catch (error) {
+        const busy = (error as { code?: unknown } | null)?.code === "EADDRINUSE";
+        throw new Error(
+          `Web Host could not listen on ${config.host}:${config.port}${busy ? " (the port is already in use)" : ""}: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        );
+      }
 
       this.app.serviceOutput(this, `Web Host listening at ${this.getURL()}`);
     }
 
+    const server = this.server;
+    setPeerAddressResolver(request => {
+      try {
+        // Undefined for a request this server did not receive (tests, internal calls).
+        return (server as Partial<Bun.Server<Context>>).requestIP?.(request)?.address;
+      } catch {
+        return undefined;
+      }
+    });
     this.startKeepalive(config);
+  }
+
+  private async configureUsers(config: ParsedWebHostConfig): Promise<void> {
+    this.sessions.setTtl(config.auth.sessionDays * 24 * 60 * 60 * 1000);
+    await this.users.configure({ filePath: config.auth.usersFile, sessionDays: config.auth.sessionDays });
   }
 
   async reconfigure(config: WebHostConfig | ParsedWebHostConfig) {
     const parsed = WebHostConfigSchema.parse(config);
-    if (this.config && deepEqual(parsed, this.config)) return;
+    if (this.config && deepEqual(parsed, this.config) && !this.restartPending) return;
 
     this.config = parsed;
 
-    // Only restart the server if it is already listening; first-time bind happens in plugin start.
-    if (this.server) {
-      await this.server.stop();
-      this.server = null;
+    // Only restart the server if it is (or was, before a failed restart) listening; first-time
+    // bind happens in plugin start.
+    if (this.server || this.restartPending) {
+      if (this.server) {
+        await this.server.stop();
+        this.server = null;
+      }
       this.stopKeepalive();
       this.activeSockets.clear();
+      // Marked before listening so a failed bind leaves the next reconfigure able to retry.
+      this.restartPending = true;
       await this.listen();
+      this.restartPending = false;
     }
   }
 
   async stop() {
+    await this.users.flush();
+    this.restartPending = false;
     this.stopKeepalive();
     this.activeSockets.clear();
     if (this.server) {
@@ -213,7 +303,9 @@ export default class WebHostService implements TokenRingService {
         const secure = isSecureRequest(request);
 
         if (request.method === "DELETE") {
-          this.sessions.revoke(parseCookie(request.headers.get("Cookie"), SESSION_COOKIE));
+          const sessionId = parseCookie(request.headers.get("Cookie"), SESSION_COOKIE);
+          this.sessions.revoke(sessionId);
+          await this.users.revokeSession(sessionId).catch(() => undefined);
           return new Response(null, {
             status: 204,
             headers: { "Cache-Control": "no-store", "Set-Cookie": clearedSessionCookieHeader(secure) },
@@ -224,8 +316,7 @@ export default class WebHostService implements TokenRingService {
           return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST, DELETE" } });
         }
 
-        const auth = this.requireConfig().auth;
-        if (Object.keys(auth.users).length === 0) {
+        if (!this.users.hasAnyUsers()) {
           // Misconfiguration: refuse rather than hand out unauthenticated sessions.
           return new Response("Authentication is not configured", { status: 503, headers: { "Cache-Control": "no-store" } });
         }
@@ -241,7 +332,8 @@ export default class WebHostService implements TokenRingService {
             });
           }
         }
-        if (!basic || !credentialsValid(auth, basic.username, basic.password)) {
+        const authenticated = basic ? await this.users.authenticate(basic.username, basic.password) : null;
+        if (!basic || !authenticated) {
           if (throttleKey) loginRateLimiter.recordFailure(throttleKey);
           return new Response("Unauthorized", {
             status: 401,
@@ -250,13 +342,86 @@ export default class WebHostService implements TokenRingService {
         }
         if (throttleKey) loginRateLimiter.recordSuccess(throttleKey);
 
-        const sessionId = this.sessions.create(basic.username);
-        return new Response(JSON.stringify({ ok: true, username: basic.username }), {
+        let sessionId: string;
+        try {
+          sessionId =
+            authenticated.source === "managed"
+              ? await this.users.createSession(authenticated.username, request.headers.get("User-Agent") ?? undefined)
+              : this.sessions.create(authenticated.username, authenticated.credential);
+        } catch {
+          return new Response("Could not start a session", { status: 500, headers: { "Cache-Control": "no-store" } });
+        }
+        return new Response(JSON.stringify({ ok: true, username: authenticated.username, role: authenticated.role }), {
           status: 200,
-          headers: { ...noStore, "Set-Cookie": sessionCookieHeader(sessionId, Math.floor(SESSION_TTL_MS / 1000), secure) },
+          headers: { ...noStore, "Set-Cookie": sessionCookieHeader(sessionId, this.sessions.ttlSeconds, secure) },
         });
       },
+
+      [AUTH_REDEEM_ROUTE]: async (request: Request): Promise<Response> => this.redeemAccessLink(request),
     };
+  }
+
+  /**
+   * `POST /api/auth/redeem` { token }: trades a one-time access link token for the same session cookie
+   * /api/auth/session issues. The token travels in the body (it lives in the link's #fragment, which the
+   * browser never sends), the request must be same-origin JSON so another site cannot sign a visitor in
+   * as someone else, and every failure looks alike.
+   */
+  private async redeemAccessLink(request: Request): Promise<Response> {
+    const headers = { "Cache-Control": "no-store", "Content-Type": "application/json" };
+    const fail = (status: number, message: string, extra: Record<string, string> = {}) =>
+      new Response(JSON.stringify({ error: message }), { status, headers: { ...headers, ...extra } });
+
+    if (request.method !== "POST") {
+      return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST", "Cache-Control": "no-store" } });
+    }
+
+    const url = new URL(request.url);
+    const origin = request.headers.get("Origin");
+    let sameOrigin: boolean;
+    try {
+      sameOrigin = origin !== null && new URL(origin).host === url.host;
+    } catch {
+      sameOrigin = false;
+    }
+    const fetchSite = request.headers.get("Sec-Fetch-Site");
+    if (!sameOrigin || (fetchSite !== null && fetchSite !== "same-origin")) {
+      return fail(403, "Cross-origin requests are not allowed.");
+    }
+    if (!(request.headers.get("Content-Type") ?? "").toLowerCase().startsWith("application/json")) {
+      return fail(415, "Expected JSON.");
+    }
+
+    const throttleKey = LoginRateLimiter.keyFor(LoginRateLimiter.clientIpFromRequest(request), "access-link");
+    const retryAfterSeconds = loginRateLimiter.isBlocked(throttleKey);
+    if (retryAfterSeconds > 0) {
+      return fail(429, "Too many attempts. Try again later.", { "Retry-After": String(retryAfterSeconds) });
+    }
+
+    const declaredLength = Number(request.headers.get("Content-Length") ?? 0);
+    if (declaredLength > MAX_REDEEM_BODY_BYTES) return fail(413, "Request too large.");
+    let token: unknown;
+    try {
+      const text = await request.text();
+      if (text.length > MAX_REDEEM_BODY_BYTES) return fail(413, "Request too large.");
+      token = (JSON.parse(text) as { token?: unknown } | null)?.token;
+    } catch {
+      token = undefined;
+    }
+
+    // Successes deliberately do not clear the failure count: otherwise one valid link would reset a guesser's budget.
+    const redeemed = typeof token === "string" ? await this.users.redeemAccessLink(token, request.headers.get("User-Agent") ?? undefined) : null;
+    if (!redeemed) {
+      loginRateLimiter.recordFailure(throttleKey);
+      return fail(401, REDEEM_FAILURE);
+    }
+
+    const secure = isSecureRequest(request);
+    const sessionId = redeemed.sessionId ?? this.sessions.create(redeemed.username, redeemed.credential);
+    return new Response(JSON.stringify({ ok: true, username: redeemed.username, role: redeemed.role }), {
+      status: 200,
+      headers: { ...headers, "Set-Cookie": sessionCookieHeader(sessionId, this.sessions.ttlSeconds, secure) },
+    });
   }
 
   private buildFetchHandler(wsRoutes: EnhancedStringMap<WebSocketHandler>) {
@@ -285,12 +450,17 @@ export default class WebHostService implements TokenRingService {
         // Upgrade to WebSocket
         // A valid session cookie authenticates the socket before its first
         // message, so a reloaded page never has to send a password again.
-        const sessionUsername = this.sessions.resolve(parseCookie(request.headers.get("Cookie"), SESSION_COOKIE));
+        const sessionId = parseCookie(request.headers.get("Cookie"), SESSION_COOKIE);
+        const sessionUsername = this.resolveSessionId(sessionId);
         const success = server.upgrade(request, {
           data: {
             path,
             abortController: new AbortController(),
             sessionUsername,
+            requestOrigin: `${isSecureRequest(request) ? "https" : "http"}://${request.headers.get("host") ?? url.host}`,
+            // Rechecked on every message, so signing out, removing the user or changing their
+            // password also cuts off sockets that are already open.
+            sessionValid: () => sessionUsername !== null && this.resolveSessionId(sessionId) === sessionUsername,
             clientIp: LoginRateLimiter.clientIpFromRequest(request),
           },
         });

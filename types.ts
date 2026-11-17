@@ -1,10 +1,20 @@
+import type { RpcCallContext } from "@tokenring-ai/rpc/types";
 import type { Serve } from "bun";
+
+/** What the WebSocket host tells an RPC method about its caller beyond who they are. */
+export interface WebRpcCallContext extends RpcCallContext {
+  /** `scheme://host` the caller's browser used, e.g. `http://192.168.1.20:3000`. */
+  requestOrigin?: string;
+}
 
 type Context = {
   path: string;
   abortController: AbortController;
   /** Username resolved from the session cookie at handshake, if any. */
   sessionUsername?: string | null;
+  /** Whether that session still holds: not signed out, user not removed, password unchanged. */
+  sessionValid?: () => boolean;
+  requestOrigin?: string;
 };
 
 export interface WebResource {

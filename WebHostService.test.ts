@@ -196,6 +196,29 @@ describe("WebHostService", () => {
     });
   });
 
+  describe("reconfigure after a failed restart", () => {
+    it("retries listening on the next reconfigure even when the config is unchanged", async () => {
+      await service.listen();
+      const busy = Object.assign(new Error("Failed to start server. Is port 4000 in use?"), { code: "EADDRINUSE" });
+      const serve = spyOn(Bun, "serve").mockImplementation((() => {
+        throw busy;
+      }) as unknown as typeof Bun.serve);
+
+      const moved = { ...mockConfig, port: 4000 };
+      await expect(service.reconfigure(moved)).rejects.toThrow("Web Host could not listen on 127.0.0.1:4000 (the port is already in use)");
+      expect(() => service.getURL()).toThrow();
+
+      serve.mockImplementation((() => mockServer) as unknown as typeof Bun.serve);
+      await service.reconfigure(moved);
+      expect(serve).toHaveBeenCalledTimes(3); // initial listen, failed restart, retry
+      expect(service.getURL()).toBeDefined();
+
+      // Once the restart succeeded, an unchanged config is a no-op again.
+      await service.reconfigure(moved);
+      expect(serve).toHaveBeenCalledTimes(3); // no new listen
+    });
+  });
+
   describe("stop method", () => {
     it("should stop the server", async () => {
       await service.listen();

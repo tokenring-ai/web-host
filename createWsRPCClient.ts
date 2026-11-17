@@ -38,6 +38,22 @@ export class RPCError extends Error {
   }
 }
 
+/**
+ * The shared socket closed under a call or stream: the server restarted, the network dropped, or
+ * the browser closed it (Chrome does when a page goes into the back/forward cache). The next call
+ * opens a fresh socket, so callers can retry at once instead of reporting an error.
+ */
+export class RpcConnectionClosedError extends Error {
+  constructor() {
+    super("WebSocket closed");
+    this.name = "RpcConnectionClosedError";
+  }
+}
+
+export function isRpcConnectionClosed(error: unknown): error is RpcConnectionClosedError {
+  return error instanceof RpcConnectionClosedError;
+}
+
 export function isRPCAuthError(error: unknown): error is RPCError {
   return error instanceof RPCError && error.code === RPC_AUTH_ERROR_CODE;
 }
@@ -88,7 +104,7 @@ function ensureOpen(socket: WebSocket) {
     }
 
     if (socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) {
-      return reject(new Error("Socket closed"));
+      return reject(new RpcConnectionClosedError());
     }
 
     socket.addEventListener("open", () => resolve(), { once: true });
@@ -249,7 +265,7 @@ function getOrCreateSocketEntry(wsUrl: URL): SocketEntry {
         const current = socketCache.get(urlKey);
         const isCurrent = !current || current.socket === socket;
         if (isCurrent) setConnectionState("disconnected");
-        const closeError = new Error("WebSocket closed");
+        const closeError = new RpcConnectionClosedError();
         for (const { reject } of pendingRequests.values()) {
           reject(closeError);
         }
@@ -323,6 +339,8 @@ export default function createWsRPCClient<T extends RPCSchema>(wsUrl: URL, schem
             const queue: unknown[] = [];
             let resolveNext: ((value: unknown) => void) | null = null;
             let finished = false as boolean;
+            /** The server ended the stream (or it failed); otherwise the server must be told to stop. */
+            let serverDone = false as boolean;
             let streamError: Error | null = null;
 
             pendingStreams.set(id, {
@@ -336,6 +354,7 @@ export default function createWsRPCClient<T extends RPCSchema>(wsUrl: URL, schem
               },
               close: () => {
                 finished = true;
+                serverDone = true;
                 if (resolveNext) {
                   const resolve = resolveNext;
                   resolveNext = null;
@@ -344,6 +363,7 @@ export default function createWsRPCClient<T extends RPCSchema>(wsUrl: URL, schem
               },
               error: (err: Error) => {
                 streamError = err;
+                serverDone = true;
                 if (resolveNext) {
                   const resolve = resolveNext;
                   resolveNext = null;
@@ -390,22 +410,37 @@ export default function createWsRPCClient<T extends RPCSchema>(wsUrl: URL, schem
             } finally {
               pendingStreams.delete(id);
               signal.removeEventListener("abort", onAbort);
+              // Aborted, or the consumer stopped iterating: without this the server keeps
+              // producing the stream until the socket closes.
+              if (!serverDone && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ jsonrpc: "2.0", method: "rpc.cancel", params: { id } }));
+              }
             }
           }
         : async (params: unknown) => {
-            const { socket, pendingRequests } = await ensureReady();
-            const id = ++rpcId;
-            return new Promise((resolve, reject) => {
-              pendingRequests.set(id, { resolve, reject });
-              socket.send(
-                JSON.stringify({
-                  jsonrpc: "2.0",
-                  id,
-                  method: `${schemas.path}.${methodName}`,
-                  params,
-                }),
-              );
-            });
+            const call = async () => {
+              const { socket, pendingRequests } = await ensureReady();
+              const id = ++rpcId;
+              return new Promise((resolve, reject) => {
+                pendingRequests.set(id, { resolve, reject });
+                socket.send(
+                  JSON.stringify({
+                    jsonrpc: "2.0",
+                    id,
+                    method: `${schemas.path}.${methodName}`,
+                    params,
+                  }),
+                );
+              });
+            };
+            try {
+              return await call();
+            } catch (error) {
+              // A query is safe to repeat, so one that the socket dropped under is retried once on a
+              // fresh socket. A mutation is not: it may already have been applied.
+              if (method.type === "query" && isRpcConnectionClosed(error)) return await call();
+              throw error;
+            }
           },
     ]),
   ) as {

@@ -1,4 +1,3 @@
-import type { ParsedWebHostAuthConfig } from "./schema.ts";
 import { passwordMatches } from "./util/authSecurity.ts";
 
 /** Cookie carrying the RPC session. HttpOnly, so page scripts can never read it. */
@@ -7,7 +6,8 @@ export const SESSION_COOKIE = "tokenring_session";
 /** How long a session stays valid without use. Refreshed on every successful resolve. */
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-type Session = { username: string; expiresAt: number };
+/** `credential` is the user's stored password when the session was created, so a password change ends it. */
+type Session = { username: string; credential: string; expiresAt: number };
 
 /**
  * In-memory store of logged-in sessions, keyed by an opaque random id that is
@@ -21,25 +21,48 @@ type Session = { username: string; expiresAt: number };
 export default class SessionStore {
   private readonly sessions = new Map<string, Session>();
 
+  constructor(private ttlMs: number = SESSION_TTL_MS) {}
+
+  /** Applies a changed `sessionDays` setting to sessions from now on. */
+  setTtl(ttlMs: number): void {
+    this.ttlMs = ttlMs;
+  }
+
+  get ttlSeconds(): number {
+    return Math.floor(this.ttlMs / 1000);
+  }
+
+  /** Number of live sessions for a user. */
+  countFor(username: string): number {
+    const now = Date.now();
+    let count = 0;
+    for (const session of this.sessions.values()) if (session.username === username && session.expiresAt > now) count++;
+    return count;
+  }
+
   /** Issues a session id for an already-authenticated username. */
-  create(username: string): string {
+  create(username: string, credential = ""): string {
     this.purgeExpired();
     const sessionId = crypto.randomUUID();
-    this.sessions.set(sessionId, { username, expiresAt: Date.now() + SESSION_TTL_MS });
+    this.sessions.set(sessionId, { username, credential, expiresAt: Date.now() + this.ttlMs });
     return sessionId;
   }
 
-  /** Returns the username behind a session id, extending its life. Null when unknown or expired. */
-  resolve(sessionId: string | undefined): string | null {
+  /**
+   * Returns the username behind a session id, extending its life. Null when unknown or expired, or,
+   * given `currentCredential`, when the user was removed or their password changed since sign-in
+   * (the session is then dropped).
+   */
+  resolve(sessionId: string | undefined, currentCredential?: (username: string) => string | undefined): string | null {
     if (!sessionId) return null;
     const session = this.sessions.get(sessionId);
     if (!session) return null;
-    if (session.expiresAt <= Date.now()) {
+    if (session.expiresAt <= Date.now() || (currentCredential && currentCredential(session.username) !== session.credential)) {
       this.sessions.delete(sessionId);
       return null;
     }
     // Sliding expiration: an active tab keeps its session alive.
-    session.expiresAt = Date.now() + SESSION_TTL_MS;
+    session.expiresAt = Date.now() + this.ttlMs;
     return session.username;
   }
 
@@ -88,7 +111,8 @@ export function parseBasicCredentials(header: string | null): { username: string
   }
 }
 
-export function credentialsValid(auth: ParsedWebHostAuthConfig, username: string, password: string): boolean {
+export function credentialsValid(auth: { users: Record<string, { password: string }> }, username: string, password: string): boolean {
+  if (!Object.hasOwn(auth.users, username)) return false;
   const stored = auth.users[username]?.password;
   return stored !== undefined && passwordMatches(password, stored);
 }
